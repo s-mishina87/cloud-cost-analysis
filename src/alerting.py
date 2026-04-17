@@ -32,7 +32,7 @@ def generate_notifications(anomalies: list[dict]) -> list[dict]:
         threshold = float(anomaly.get("threshold_value", 0.0) or 0.0)
 
         notification = {
-            "anomaly_id": None,
+            "anomaly_ref_key": anomaly.get("anomaly_ref_key"),
             "notification_date": datetime.now(UTC).isoformat(),
             "severity": _severity_from_ratio(actual, threshold),
             "status": "NEW",

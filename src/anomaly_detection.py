@@ -34,11 +34,16 @@ def detect_anomalies(
 
             if actual_value > threshold:
                 source = sorted_rows[index]
+                anomaly_ref_key = (
+                    f"{source['cost_date']}|{source['project_name']}|"
+                    f"{source['cluster_name']}|{source['namespace_name']}|moving_average_threshold"
+                )
                 anomaly = {
                     "cost_date": source["cost_date"],
                     "project_name": source["project_name"],
                     "cluster_name": source["cluster_name"],
                     "namespace_name": source["namespace_name"],
+                    "anomaly_ref_key": anomaly_ref_key,
                     "method": "moving_average_threshold",
                     "actual_value": round(actual_value, 2),
                     "baseline_value": round(moving_average, 2),

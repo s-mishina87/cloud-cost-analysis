@@ -171,6 +171,7 @@ def persist_pipeline_data(
             namespace_cost_ids[key] = cursor.lastrowid
 
         anomaly_ids: list[int] = []
+        anomaly_ids_by_ref_key: dict[str, int] = {}
         for anomaly in anomalies:
             namespace_cost_key = (
                 anomaly["cost_date"],
@@ -202,18 +203,32 @@ def persist_pipeline_data(
                     int(anomaly["is_anomaly"]),
                 ),
             )
-            anomaly_ids.append(cursor.lastrowid)
+            anomaly_id = cursor.lastrowid
+            anomaly_ids.append(anomaly_id)
+
+            ref_key = anomaly.get("anomaly_ref_key")
+            if ref_key:
+                anomaly_ids_by_ref_key[str(ref_key)] = anomaly_id
 
         for index, notification in enumerate(notifications):
-            if index >= len(anomaly_ids):
-                break
+            anomaly_id: int | None = None
+            ref_key = notification.get("anomaly_ref_key")
+            if ref_key is not None:
+                anomaly_id = anomaly_ids_by_ref_key.get(str(ref_key))
+
+            if anomaly_id is None and index < len(anomaly_ids):
+                anomaly_id = anomaly_ids[index]
+
+            if anomaly_id is None:
+                continue
+
             cursor.execute(
                 """
                 INSERT INTO Notification (anomaly_id, notification_date, severity, status, message)
                 VALUES (?, ?, ?, ?, ?)
                 """,
                 (
-                    anomaly_ids[index],
+                    anomaly_id,
                     notification["notification_date"],
                     notification["severity"],
                     notification["status"],

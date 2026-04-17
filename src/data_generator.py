@@ -25,20 +25,22 @@ PROJECT_NAME_POOL = [
 ]
 
 CLUSTER_NAME_POOL = [
-    "main",
-    "shared",
-    "core",
-    "services",
-    "backend",
-    "frontend",
-    "integration",
-    "data",
-    "monitoring",
-    "internal",
+    "cluster-eu-west-1",
+    "cluster-eu-central-1",
+    "cluster-us-east-1",
+    "cluster-us-west-2",
+    "cluster-ap-south-1",
+    "cluster-sa-east-1",
+    "cluster-shared-a",
+    "cluster-shared-b",
+    "cluster-batch-a",
+    "cluster-batch-b",
 ]
 
 SYSTEM_NAMESPACES = ["monitoring", "logging", "security", "ingress", "ci-runner"]
 APPLICATION_NAMESPACES = ["frontend", "checkout", "payments", "catalog", "orders", "customer-api", "search"]
+ANOMALY_CRITICAL_NAMESPACES = ["payments", "checkout", "monitoring"]
+DEFAULT_START_DATE = date(2026, 1, 1)
 
 
 def _pick_cluster_names(rng: Random, count: int) -> list[str]:
@@ -47,32 +49,60 @@ def _pick_cluster_names(rng: Random, count: int) -> list[str]:
 
 
 def _pick_namespace_names(rng: Random, count: int) -> list[str]:
-    """Build a namespace mix with both system and application namespaces."""
-    system_count = max(2, count // 3)
-    app_count = count - system_count
+    """Build namespace names and always include anomaly-critical namespaces."""
+    if count < len(ANOMALY_CRITICAL_NAMESPACES):
+        raise ValueError(
+            f"count must be >= {len(ANOMALY_CRITICAL_NAMESPACES)} to include all anomaly-critical namespaces"
+        )
 
-    chosen_system = rng.sample(SYSTEM_NAMESPACES, k=min(system_count, len(SYSTEM_NAMESPACES)))
-    chosen_app = rng.sample(APPLICATION_NAMESPACES, k=min(app_count, len(APPLICATION_NAMESPACES)))
+    all_candidates = SYSTEM_NAMESPACES + APPLICATION_NAMESPACES
+    remaining_candidates = [name for name in all_candidates if name not in ANOMALY_CRITICAL_NAMESPACES]
+    extra_count = count - len(ANOMALY_CRITICAL_NAMESPACES)
+    selected_extra = rng.sample(remaining_candidates, k=extra_count)
 
-    names = chosen_system + chosen_app
-    if "payments" not in names and len(names) < count:
-        names.append("payments")
-    if "checkout" not in names and len(names) < count:
-        names.append("checkout")
-    if "monitoring" not in names and len(names) < count:
-        names.append("monitoring")
-
-    while len(names) < count:
-        fallback = rng.choice(APPLICATION_NAMESPACES + SYSTEM_NAMESPACES)
-        if fallback not in names:
-            names.append(fallback)
-
+    names = ANOMALY_CRITICAL_NAMESPACES + selected_extra
     rng.shuffle(names)
-    return names[:count]
+    return names
 
 
 def _is_system_namespace(namespace_name: str) -> bool:
     return namespace_name in SYSTEM_NAMESPACES
+
+
+def _validate_generation_inputs(
+    days: int,
+    project_count: int,
+    clusters_per_project: int,
+    min_namespaces: int,
+    max_namespaces: int,
+) -> None:
+    """Validate generator inputs and fail fast with beginner-friendly errors."""
+    if days <= 0:
+        raise ValueError("days must be > 0")
+    if project_count <= 0:
+        raise ValueError("project_count must be > 0")
+    if project_count > len(PROJECT_NAME_POOL):
+        raise ValueError(f"project_count must be <= {len(PROJECT_NAME_POOL)}")
+
+    if clusters_per_project <= 0:
+        raise ValueError("clusters_per_project must be > 0")
+    if clusters_per_project > len(CLUSTER_NAME_POOL):
+        raise ValueError(f"clusters_per_project must be <= {len(CLUSTER_NAME_POOL)}")
+
+    if min_namespaces <= 0:
+        raise ValueError("min_namespaces must be > 0")
+    if max_namespaces <= 0:
+        raise ValueError("max_namespaces must be > 0")
+    if min_namespaces > max_namespaces:
+        raise ValueError("min_namespaces must be <= max_namespaces")
+
+    namespace_capacity = len(set(SYSTEM_NAMESPACES + APPLICATION_NAMESPACES))
+    if max_namespaces > namespace_capacity:
+        raise ValueError(f"max_namespaces must be <= {namespace_capacity}")
+    if min_namespaces < len(ANOMALY_CRITICAL_NAMESPACES):
+        raise ValueError(
+            f"min_namespaces must be >= {len(ANOMALY_CRITICAL_NAMESPACES)} to include anomaly-critical namespaces"
+        )
 
 
 def _namespace_base_cost(namespace_name: str, namespace_type: str, rng: Random) -> float:
@@ -117,10 +147,24 @@ def generate_structured_data(
     min_namespaces: int = 5,
     max_namespaces: int = 8,
     seed: int = 42,
+    start_date: date | None = None,
 ) -> dict[str, list[dict]]:
-    """Generate v1 entities and daily NamespaceCost inputs for the full pipeline."""
+    """Generate v1 entities and daily NamespaceCost inputs for the full pipeline.
+
+    By default, generation starts from a fixed calendar date to keep datasets
+    fully reproducible across different execution days. Pass ``start_date`` to
+    anchor output to another date while keeping deterministic values.
+    """
+    _validate_generation_inputs(
+        days=days,
+        project_count=project_count,
+        clusters_per_project=clusters_per_project,
+        min_namespaces=min_namespaces,
+        max_namespaces=max_namespaces,
+    )
+
     rng = Random(seed)
-    start_date = date.today() - timedelta(days=days - 1)
+    effective_start_date = start_date or DEFAULT_START_DATE
 
     project_names = PROJECT_NAME_POOL[:project_count]
     projects: list[dict] = [{"project_name": project_name} for project_name in project_names]
@@ -156,7 +200,7 @@ def generate_structured_data(
                 )
 
             for day_index in range(days):
-                current_date = (start_date + timedelta(days=day_index)).isoformat()
+                current_date = (effective_start_date + timedelta(days=day_index)).isoformat()
 
                 day_rows: list[dict] = []
                 for meta in namespace_meta:
