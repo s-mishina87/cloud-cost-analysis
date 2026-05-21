@@ -1,5 +1,65 @@
 # Cloud Costs Analysis - Datenbankschema
 
+## Database ER Diagram (English)
+
+```mermaid
+erDiagram
+  Project ||--o{ Cluster : has
+  Cluster ||--o{ Namespace : contains
+  Namespace ||--o{ NamespaceCost : records
+  NamespaceCost ||--o{ Anomaly : triggers
+  Anomaly ||--o{ Notification : creates
+
+  Project {
+    INTEGER id PK
+    TEXT project_name UK
+  }
+
+  Cluster {
+    INTEGER id PK
+    TEXT cluster_name
+    INTEGER project_id FK
+  }
+
+  Namespace {
+    INTEGER id PK
+    TEXT namespace_name
+    INTEGER cluster_id FK
+  }
+
+  NamespaceCost {
+    INTEGER id PK
+    TEXT cost_date
+    INTEGER namespace_id FK
+    REAL usage_cost
+    REAL overhead_cost
+    REAL total_cost
+  }
+
+  Anomaly {
+    INTEGER id PK
+    INTEGER namespace_cost_id FK
+    TEXT anomaly_date
+    TEXT method
+    REAL actual_value
+    REAL baseline_value
+    REAL threshold_value
+    INTEGER is_anomaly
+  }
+
+  Notification {
+    INTEGER id PK
+    INTEGER anomaly_id FK
+    TEXT notification_date
+    TEXT severity
+    TEXT status
+    TEXT message
+  }
+```
+
+**Cardinality:** 1:N on every step in the chain.
+**Core relation path:** Project -> Cluster -> Namespace -> NamespaceCost -> Anomaly -> Notification.
+
 ## Übersicht aller Tabellen und Verbindungen
 
 Das SQLite-System basiert auf 6 Tabellen, die in einer hierarchischen Struktur verbunden sind:

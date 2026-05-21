@@ -106,12 +106,29 @@ def _validate_generation_inputs(
 
 
 def _namespace_base_cost(namespace_name: str, namespace_type: str, rng: Random) -> float:
-    """Return a realistic baseline where application namespaces tend to cost more."""
-    if namespace_name in {"payments", "checkout", "orders", "catalog"}:
-        return rng.uniform(65.0, 95.0)
+    """Return a baseline cost that creates a realistic size hierarchy.
+
+    Tiers (why each exists):
+    - Large (payments, checkout): these namespaces handle high-value traffic and
+      should dominate cluster spend so that spikes are immediately visible.
+    - Medium-large (orders, catalog): important workloads but clearly below the
+      large tier, representing the next layer of spend.
+    - Stable-visible (monitoring): a system namespace that is always running and
+      noticeable, but not as costly as the main application workloads.
+    - Small system (logging, security, ingress, ci-runner): infrastructure
+      support services that add up in aggregate but are individually modest.
+    - Medium application (frontend, customer-api, search, …): regular application
+      namespaces that sit below the large tier.
+    """
+    if namespace_name in {"payments", "checkout"}:
+        return rng.uniform(150.0, 200.0)  # large tier
+    if namespace_name in {"orders", "catalog"}:
+        return rng.uniform(80.0, 120.0)   # medium-large tier
+    if namespace_name == "monitoring":
+        return rng.uniform(50.0, 70.0)    # stable, noticeable system namespace
     if namespace_type == "system":
-        return rng.uniform(20.0, 40.0)
-    return rng.uniform(35.0, 70.0)
+        return rng.uniform(12.0, 25.0)    # small system support namespaces
+    return rng.uniform(35.0, 60.0)        # medium application namespaces
 
 
 def _usage_for_day(
@@ -120,10 +137,47 @@ def _usage_for_day(
     day_index: int,
     base_cost: float,
     rng: Random,
+    day_of_week: int,
 ) -> float:
-    """Generate daily usage cost with realistic variance and intentional anomalies."""
-    variation = rng.uniform(-0.06, 0.06) if namespace_type == "system" else rng.uniform(-0.20, 0.20)
+    """Generate daily usage cost with realistic variance, weekday/weekend pattern,
+    and intentional anomaly scenarios.
+
+    Stability tiers (why each exists):
+    - System namespaces and monitoring use low variance (±6 %) because
+      infrastructure runs continuously and costs are predictable.
+    - orders and catalog use moderate variance (±12 %) — steady workloads
+      but with meaningful day-to-day fluctuation.
+    - payments and checkout use higher variance (±20 %) — transaction
+      volumes are inherently more volatile, and spikes must stand out.
+    - All other application namespaces use ±18 % as a mid-range default.
+
+    Weekday / weekend pattern (why it exists):
+    - Application namespaces drop to 60-75 % of weekday cost on weekends
+      because user-facing traffic falls sharply on Saturdays and Sundays.
+    - System namespaces only drop to 88-96 % because infrastructure
+      (monitoring, logging, ingress…) stays largely on regardless of day.
+
+    # TODO: add mild summer seasonality once invoice time-series data is
+    # large enough to confirm the hypothesis.
+    """
+    # Daily noise by stability tier
+    if namespace_name == "monitoring" or namespace_type == "system":
+        variation = rng.uniform(-0.06, 0.06)
+    elif namespace_name in {"payments", "checkout", "search"}:
+        variation = rng.uniform(-0.20, 0.20)  # volatile – spikes must pop
+    elif namespace_name in {"orders", "catalog"}:
+        variation = rng.uniform(-0.12, 0.12)  # stable application workloads
+    else:
+        variation = rng.uniform(-0.18, 0.18)  # medium application default
+
     value = base_cost * (1 + variation)
+
+    # Weekday / weekend multiplier (Saturday=5, Sunday=6 in Python's weekday())
+    if day_of_week >= 5:
+        if namespace_type == "system":
+            value *= rng.uniform(0.88, 0.96)  # infrastructure stays mostly on
+        else:
+            value *= rng.uniform(0.60, 0.75)  # application traffic drops on weekends
 
     # Intentional scenario 1: sharp spike for payments.
     if namespace_name == "payments" and day_index in {55, 56, 57}:
@@ -200,7 +254,9 @@ def generate_structured_data(
                 )
 
             for day_index in range(days):
-                current_date = (effective_start_date + timedelta(days=day_index)).isoformat()
+                current_date_obj = effective_start_date + timedelta(days=day_index)
+                current_date = current_date_obj.isoformat()
+                day_of_week = current_date_obj.weekday()  # 0=Monday, 6=Sunday
 
                 day_rows: list[dict] = []
                 for meta in namespace_meta:
@@ -210,6 +266,7 @@ def generate_structured_data(
                         day_index=day_index,
                         base_cost=meta["base_cost"],
                         rng=rng,
+                        day_of_week=day_of_week,
                     )
                     row = {
                         "cost_date": current_date,

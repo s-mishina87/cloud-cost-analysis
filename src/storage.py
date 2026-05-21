@@ -1,5 +1,4 @@
-"""SQLite storage layer for the agreed v1 entities.
-
+"""
 This module persists pipeline data into normalized tables:
 Project, Cluster, Namespace, NamespaceCost, Anomaly, Notification.
 """

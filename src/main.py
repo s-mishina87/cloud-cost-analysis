@@ -1,5 +1,4 @@
-"""Beginner-friendly pipeline entry point for the corrected v1 model.
-
+"""
 Pipeline model:
 Project -> Cluster -> Namespace -> NamespaceCost -> Anomaly -> Notification
 """
@@ -12,7 +11,9 @@ from src.alerting import generate_notifications
 from src.allocation import apply_overhead_allocation
 from src.anomaly_detection import detect_anomalies
 from src.data_generator import generate_structured_data
+from src.email_notifier import send_notifications_by_email
 from src.storage import debug_sqlite, persist_pipeline_data
+from src.teams_notifier import send_notifications_to_teams
 
 
 DB_PATH = Path("data") / "cloud_costs.db"
@@ -83,6 +84,16 @@ def main() -> None:
     print(f"Notifications created: {len(notifications)}")
     _preview_rows(notifications, "Example notification rows:")
     print("Target table: Notification")
+
+    # Step 4b is optional: send internal notifications to Teams webhook.
+    teams_result = send_notifications_to_teams(notifications)
+    print("\n[Step 4b: Optional Teams delivery]")
+    print(teams_result["message"])
+
+    # Step 4c is optional: send internal notifications by email.
+    email_result = send_notifications_by_email(notifications)
+    print("\n[Step 4c: Optional email delivery]")
+    print(email_result["message"])
 
     # Step 5 starts here: persist all entities into normalized SQLite tables.
     persisted = persist_pipeline_data(

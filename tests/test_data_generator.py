@@ -1,9 +1,10 @@
-from datetime import date
+from datetime import date, timedelta
 
 from src.data_generator import (
     ANOMALY_CRITICAL_NAMESPACES,
     APPLICATION_NAMESPACES,
     CLUSTER_NAME_POOL,
+    DEFAULT_START_DATE,
     SYSTEM_NAMESPACES,
     generate_structured_data,
 )
@@ -143,3 +144,192 @@ def test_generator_rejects_invalid_namespace_bounds() -> None:
         assert "min_namespaces must be <= max_namespaces" in str(exc)
     else:
         raise AssertionError("Expected ValueError when min_namespaces is greater than max_namespaces")
+
+
+# ---------------------------------------------------------------------------
+# Realistic data shape tests (TDD for generator improvements)
+# ---------------------------------------------------------------------------
+
+
+def _cv(costs: list[float]) -> float:
+    """Coefficient of variation: std / mean. Lower means more stable."""
+    n = len(costs)
+    if n < 2:
+        return float("inf")
+    mean = sum(costs) / n
+    if mean == 0:
+        return float("inf")
+    variance = sum((c - mean) ** 2 for c in costs) / n
+    return variance ** 0.5 / mean
+
+
+def _avg_cost_by_namespace(dataset: dict) -> dict[str, float]:
+    """Return mean usage_cost per namespace name across all projects, clusters and days."""
+    totals: dict[str, list[float]] = {}
+    for row in dataset["namespace_costs"]:
+        totals.setdefault(row["namespace_name"], []).append(row["usage_cost"])
+    return {ns: sum(v) / len(v) for ns, v in totals.items()}
+
+
+def test_payments_and_checkout_are_among_larger_namespaces() -> None:
+    """Payments and checkout should be clearly in the top tier by average cost.
+
+    They are the anomaly-critical application namespaces and should dominate
+    spend so that spike and jump scenarios stand out against a realistic baseline.
+    """
+    dataset = generate_structured_data(days=90, project_count=3, clusters_per_project=2, seed=42)
+    avg_by_ns = _avg_cost_by_namespace(dataset)
+    sorted_ns = sorted(avg_by_ns, key=lambda n: avg_by_ns[n], reverse=True)
+    top_names = set(sorted_ns[:4])  # lenient: top-4 out of all namespaces
+
+    assert "payments" in top_names, f"payments not in top-4 by avg cost; ranked: {sorted_ns}"
+    assert "checkout" in top_names, f"checkout not in top-4 by avg cost; ranked: {sorted_ns}"
+
+
+def test_visible_size_hierarchy() -> None:
+    """The top-2 namespaces by average cost should be at least 3x more expensive
+    than the bottom-3, creating the few-large / many-small pattern.
+    """
+    dataset = generate_structured_data(days=90, project_count=3, clusters_per_project=2, seed=42)
+    avg_by_ns = _avg_cost_by_namespace(dataset)
+    sorted_avgs = sorted(avg_by_ns.values(), reverse=True)
+
+    top_2_avg = sum(sorted_avgs[:2]) / 2
+    bottom_3_avg = sum(sorted_avgs[-3:]) / 3
+
+    assert top_2_avg > bottom_3_avg * 3, (
+        f"Hierarchy too flat: top-2 avg={top_2_avg:.2f}, bottom-3 avg={bottom_3_avg:.2f}"
+    )
+
+
+def test_monitoring_is_more_stable_than_application_namespaces() -> None:
+    """Monitoring (system-like) should have lower day-to-day variability than
+    application namespaces.
+
+    Uses only the first 30 days to avoid the intentional gradual-increase
+    scenario inflating monitoring's coefficient of variation.
+    """
+    dataset = generate_structured_data(days=90, project_count=3, clusters_per_project=2, seed=42)
+
+    cutoff = (DEFAULT_START_DATE + timedelta(days=30)).isoformat()
+    costs_by_ns: dict[str, list[float]] = {}
+    for row in dataset["namespace_costs"]:
+        if row["cost_date"] < cutoff:
+            costs_by_ns.setdefault(row["namespace_name"], []).append(row["usage_cost"])
+
+    monitoring_cv = _cv(costs_by_ns.get("monitoring", []))
+
+    app_cvs = [
+        _cv(costs)
+        for ns, costs in costs_by_ns.items()
+        if ns in APPLICATION_NAMESPACES
+    ]
+    assert app_cvs, "No application namespaces found in first-30-day window"
+    avg_app_cv = sum(app_cvs) / len(app_cvs)
+
+    assert monitoring_cv < avg_app_cv, (
+        f"Expected monitoring (CV={monitoring_cv:.3f}) < application avg (CV={avg_app_cv:.3f})"
+    )
+
+
+def test_weekday_costs_higher_than_weekend_costs() -> None:
+    """Average usage cost on weekdays should exceed the weekend average.
+
+    This reflects lower application traffic on Saturdays and Sundays.
+    """
+    dataset = generate_structured_data(days=90, project_count=3, clusters_per_project=2, seed=42)
+
+    weekday_costs: list[float] = []
+    weekend_costs: list[float] = []
+    for row in dataset["namespace_costs"]:
+        d = date.fromisoformat(row["cost_date"])
+        if d.weekday() < 5:  # Monday=0 … Friday=4
+            weekday_costs.append(row["usage_cost"])
+        else:
+            weekend_costs.append(row["usage_cost"])
+
+    avg_weekday = sum(weekday_costs) / len(weekday_costs)
+    avg_weekend = sum(weekend_costs) / len(weekend_costs)
+
+    assert avg_weekday > avg_weekend, (
+        f"Expected weekday avg ({avg_weekday:.2f}) > weekend avg ({avg_weekend:.2f})"
+    )
+
+
+def test_payments_spike_anomaly_is_clearly_elevated() -> None:
+    """Days 55-57 should show a sharp spike in payments cost versus the baseline.
+
+    The generator multiplies payments by 3x on those days; even accounting for
+    normal noise the spike should be well above 2x the non-spike average.
+    """
+    dataset = generate_structured_data(days=90, project_count=3, clusters_per_project=2, seed=42)
+
+    spike_dates = {
+        (DEFAULT_START_DATE + timedelta(days=d)).isoformat() for d in (55, 56, 57)
+    }
+
+    spike_costs: list[float] = []
+    normal_costs: list[float] = []
+    for row in dataset["namespace_costs"]:
+        if row["namespace_name"] != "payments":
+            continue
+        (spike_costs if row["cost_date"] in spike_dates else normal_costs).append(row["usage_cost"])
+
+    avg_spike = sum(spike_costs) / len(spike_costs)
+    avg_normal = sum(normal_costs) / len(normal_costs)
+
+    assert avg_spike > avg_normal * 2.0, (
+        f"payments spike avg={avg_spike:.2f} should be >2x normal avg={avg_normal:.2f}"
+    )
+
+
+def test_checkout_jump_anomaly_is_elevated() -> None:
+    """Days 40-43 should show elevated checkout cost versus other days.
+
+    The generator adds a fixed upward jump on those days; on average the
+    spike window should be at least 10 % above the non-spike average.
+    """
+    dataset = generate_structured_data(days=90, project_count=3, clusters_per_project=2, seed=42)
+
+    jump_dates = {
+        (DEFAULT_START_DATE + timedelta(days=d)).isoformat() for d in range(40, 44)
+    }
+
+    jump_costs: list[float] = []
+    normal_costs: list[float] = []
+    for row in dataset["namespace_costs"]:
+        if row["namespace_name"] != "checkout":
+            continue
+        (jump_costs if row["cost_date"] in jump_dates else normal_costs).append(row["usage_cost"])
+
+    avg_jump = sum(jump_costs) / len(jump_costs)
+    avg_normal = sum(normal_costs) / len(normal_costs)
+
+    assert avg_jump > avg_normal * 1.10, (
+        f"checkout jump avg={avg_jump:.2f} should be >1.10x normal avg={avg_normal:.2f}"
+    )
+
+
+def test_monitoring_gradual_increase_anomaly_exists() -> None:
+    """Monitoring costs after day 60 should be visibly higher than before day 60.
+
+    The generator adds a linear increment starting at day_index 60, so the
+    second period's average should exceed the first period's average.
+    """
+    dataset = generate_structured_data(days=90, project_count=3, clusters_per_project=2, seed=42)
+
+    boundary = (DEFAULT_START_DATE + timedelta(days=60)).isoformat()
+
+    before: list[float] = []
+    after: list[float] = []
+    for row in dataset["namespace_costs"]:
+        if row["namespace_name"] != "monitoring":
+            continue
+        (after if row["cost_date"] >= boundary else before).append(row["usage_cost"])
+
+    avg_before = sum(before) / len(before)
+    avg_after = sum(after) / len(after)
+
+    assert avg_after > avg_before * 1.10, (
+        f"monitoring after-day-60 avg={avg_after:.2f} should be >1.10x before avg={avg_before:.2f}"
+    )

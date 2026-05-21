@@ -22,8 +22,17 @@ def _severity_from_ratio(actual_value: float, threshold_value: float) -> str:
     return "LOW"
 
 
-def generate_notifications(anomalies: list[dict]) -> list[dict]:
-    """Create Notification records for anomalies flagged by detection logic."""
+def generate_notifications(
+    anomalies: list[dict],
+    notification_threshold: float = 200.0,
+) -> list[dict]:
+    """Create local notifications for materially important anomalies."""
+    # anomaly detection finds suspicious cases; alerting decides if they matter enough to notify.
+    if not anomalies:
+        return []
+    if notification_threshold < 0:
+        raise ValueError("notification_threshold must be >= 0")
+
     notifications: list[dict] = []
 
     for anomaly in anomalies:
@@ -31,6 +40,12 @@ def generate_notifications(anomalies: list[dict]) -> list[dict]:
         baseline = float(anomaly.get("baseline_value", 0.0) or 0.0)
         threshold = float(anomaly.get("threshold_value", 0.0) or 0.0)
 
+        # Only materially relevant anomalies become notifications.
+        absolute_difference = actual - baseline
+        if absolute_difference <= notification_threshold:
+            continue
+
+        # Severity classifies only notifications that pass the materiality filter.
         notification = {
             "anomaly_ref_key": anomaly.get("anomaly_ref_key"),
             "notification_date": datetime.now(UTC).isoformat(),
@@ -38,7 +53,8 @@ def generate_notifications(anomalies: list[dict]) -> list[dict]:
             "status": "NEW",
             "message": (
                 f"Cost anomaly in {anomaly['namespace_name']} ({anomaly['project_name']}/{anomaly['cluster_name']}) "
-                f"on {anomaly['cost_date']}: actual={actual}, baseline={baseline}, threshold={round(threshold, 2)}"
+                f"on {anomaly['cost_date']}: actual={round(actual, 2)}, "
+                f"baseline={round(baseline, 2)}, threshold={round(threshold, 2)}"
             ),
         }
         notifications.append(notification)
