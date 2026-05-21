@@ -360,7 +360,7 @@ def build_dashboard() -> None:
     )
     anomaly_cost_series["threshold_value"] = anomaly_cost_series["baseline_value"] * 1.5
 
-    st.subheader("Anomaly values with baseline and threshold band")
+    st.subheader("Namespace costs")
     min_anomaly_chart_date = anomaly_cost_series["cost_date"].min().date()
     max_anomaly_chart_date = anomaly_cost_series["cost_date"].max().date()
     anomaly_range_mode = st.radio(
@@ -483,7 +483,7 @@ def build_dashboard() -> None:
                 x=namespace_costs["cost_date"],
                 y=namespace_costs["total_cost"],
                 mode="lines",
-                name=f"Actual cost: {namespace_label}",
+                name=f" {namespace_label}",
                 legendgroup=f"actual_cost_{namespace_label}",
                 line={"color": namespace_color, "width": 2},
                 customdata=namespace_costs[
@@ -544,7 +544,7 @@ def build_dashboard() -> None:
             )
         )
     anomaly_value_fig.update_layout(
-        title="Anomaly values with baseline range and threshold",
+        title="Namespace costs",
         xaxis_title="Date",
         yaxis_title="Namespace cost (" + CURRENCY_PREFIX + ")",
         yaxis={"tickprefix": CURRENCY_PREFIX, "tickformat": CURRENCY_TICK_FORMAT},
