@@ -7,17 +7,15 @@ dashboard remains unchanged while richer visualisations can be tried out.
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.storage import initialize_database
+from src.paths import DB_PATH
 
 
-DB_PATH = Path("data") / "cloud_costs.db"
 CURRENCY_PREFIX = "\u20ac"
 CURRENCY_TICK_FORMAT = ",.2f"
 NAMESPACE_COLORS = px.colors.qualitative.Plotly
@@ -155,8 +153,6 @@ def build_dashboard() -> None:
     if not DB_PATH.exists():
         st.warning("Database not found. Run the pipeline first with: python -m src.main")
         return
-
-    initialize_database(DB_PATH)
 
     with sqlite3.connect(DB_PATH) as connection:
         costs = load_costs(connection)

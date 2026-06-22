@@ -19,3 +19,4 @@ Thumbs.db
 # Data artifacts
 *.log
 *.tmp
+src/data/

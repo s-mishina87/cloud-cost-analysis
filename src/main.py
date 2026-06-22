@@ -12,11 +12,9 @@ from src.allocation import apply_overhead_allocation
 from src.anomaly_detection import detect_anomalies
 from src.data_generator import generate_structured_data
 from src.email_notifier import send_notifications_by_email
+from src.paths import DB_PATH
 from src.storage import debug_sqlite, persist_pipeline_data
 from src.teams_notifier import send_notifications_to_teams
-
-
-DB_PATH = Path("data") / "cloud_costs.db"
 
 
 def _preview_rows(rows: list[dict], label: str, sample_size: int = 5) -> None:
