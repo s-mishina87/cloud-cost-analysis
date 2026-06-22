@@ -27,6 +27,19 @@ def _average_absolute_change(rows: list[dict]) -> float:
     return sum(absolute_changes) / len(absolute_changes)
 
 
+def severity_from_ratio(actual_value: float, threshold_value: float) -> str:
+    """Classify anomaly severity from how far actual cost exceeds the threshold."""
+    if threshold_value <= 0:
+        return "MEDIUM"
+
+    ratio = actual_value / threshold_value
+    if ratio >= 2.0:
+        return "HIGH"
+    if ratio >= 1.3:
+        return "MEDIUM"
+    return "LOW"
+
+
 def detect_anomalies(
     records: list[dict],
     window_size: int = 7,
@@ -79,6 +92,7 @@ def detect_anomalies(
                     "actual_value": round(actual_value, 2),
                     "baseline_value": round(moving_average, 2),
                     "threshold_value": round(threshold, 2),
+                    "severity": severity_from_ratio(actual_value, threshold),
                     "is_anomaly": 1,
                     # daily_change = current cost - previous day's cost.
                     "daily_change": round(daily_change, 2),

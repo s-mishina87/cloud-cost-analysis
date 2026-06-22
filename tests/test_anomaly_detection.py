@@ -59,6 +59,17 @@ def test_detects_spike_above_moving_average_threshold() -> None:
     assert anomalies[0]["actual_value"] == 16.0
     assert anomalies[0]["moving_average"] == 10.0
     assert anomalies[0]["threshold"] == 15.0
+    assert anomalies[0]["severity"] == "LOW"
+
+
+def test_anomaly_output_includes_severity_classification() -> None:
+    low = detect_anomalies(_records([100.0, 100.0, 121.0]), window_size=2, deviation_factor=1.0)[0]
+    medium = detect_anomalies(_records([100.0, 100.0, 130.0]), window_size=2, deviation_factor=1.0)[0]
+    high = detect_anomalies(_records([100.0, 100.0, 200.0]), window_size=2, deviation_factor=1.0)[0]
+
+    assert low["severity"] == "LOW"
+    assert medium["severity"] == "MEDIUM"
+    assert high["severity"] == "HIGH"
 
 
 def test_value_equal_to_threshold_is_not_anomaly() -> None:

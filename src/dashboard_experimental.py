@@ -14,12 +14,20 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+from src.storage import initialize_database
+
 
 DB_PATH = Path("data") / "cloud_costs.db"
 CURRENCY_PREFIX = "\u20ac"
 CURRENCY_TICK_FORMAT = ",.2f"
 NAMESPACE_COLORS = px.colors.qualitative.Plotly
 SIDEBAR_WIDTH_PX = 420
+SEVERITY_ORDER = ["HIGH", "MEDIUM", "LOW"]
+SEVERITY_COLORS = {
+    "HIGH": "#dc2626",
+    "MEDIUM": "#f59e0b",
+    "LOW": "#2563eb",
+}
 
 
 def widen_sidebar() -> None:
@@ -124,6 +132,7 @@ def load_anomalies(connection: sqlite3.Connection) -> pd.DataFrame:
             a.actual_value,
             a.baseline_value,
             a.threshold_value,
+            a.severity,
             a.is_anomaly
         FROM Anomaly a
         JOIN NamespaceCost nc ON nc.id = a.namespace_cost_id
@@ -147,6 +156,8 @@ def build_dashboard() -> None:
         st.warning("Database not found. Run the pipeline first with: python -m src.main")
         return
 
+    initialize_database(DB_PATH)
+
     with sqlite3.connect(DB_PATH) as connection:
         costs = load_costs(connection)
         anomalies = load_anomalies(connection)
@@ -163,6 +174,14 @@ def build_dashboard() -> None:
 
     selected_projects = st.sidebar.multiselect("Project", projects, default=projects)
     selected_namespaces = st.sidebar.multiselect("Namespace", namespaces, default=namespaces)
+    available_severities = [
+        severity for severity in SEVERITY_ORDER if severity in set(anomalies["severity"].unique())
+    ]
+    selected_severities = st.sidebar.multiselect(
+        "Anomaly severity",
+        available_severities,
+        default=available_severities,
+    )
 
     filtered_costs = costs[
         costs["project_name"].isin(selected_projects)
@@ -172,6 +191,7 @@ def build_dashboard() -> None:
     filtered_anomalies = anomalies[
         anomalies["project_name"].isin(selected_projects)
         & anomalies["namespace_series"].isin(selected_namespaces)
+        & anomalies["severity"].isin(selected_severities)
     ]
 
     if filtered_costs.empty:
@@ -193,6 +213,14 @@ def build_dashboard() -> None:
     col2.metric("Total anomalies", anomaly_count)
     col3.metric("Days with anomalies", anomaly_day_count)
     col4.metric("Latest daily cost", format_euro(latest_cost))
+
+    severity_counts = filtered_anomalies["severity"].value_counts()
+    severity_cols = st.columns(3)
+    for index, severity in enumerate(SEVERITY_ORDER):
+        severity_cols[index].metric(
+            f"{severity.title()} severity",
+            int(severity_counts.get(severity, 0)),
+        )
 
     st.subheader("Costs over time")
     min_cost_date = daily_costs["cost_date"].min().date()
@@ -258,6 +286,10 @@ def build_dashboard() -> None:
             .agg(
                 anomaly_count=("anomaly_id", "count"),
                 anomalous_namespace_cost=("actual_value", "sum"),
+                highest_severity=(
+                    "severity",
+                    lambda values: min(values, key=lambda item: SEVERITY_ORDER.index(item)),
+                ),
             )
             .merge(
                 daily_costs[["cost_date", "total_cost"]],
@@ -275,14 +307,20 @@ def build_dashboard() -> None:
                 y=chart_anomaly_daily["total_cost"],
                 mode="markers",
                 name="Dates with anomalies",
-                marker={"size": 10, "color": "red"},
-                customdata=chart_anomaly_daily[["anomaly_count", "anomalous_namespace_cost"]],
+                marker={
+                    "size": 10,
+                    "color": chart_anomaly_daily["highest_severity"].map(SEVERITY_COLORS),
+                },
+                customdata=chart_anomaly_daily[
+                    ["anomaly_count", "anomalous_namespace_cost", "highest_severity"]
+                ],
                 hovertemplate=(
                     "Date: %{x}<br>"
                     "Total selected cost: "
                     + CURRENCY_PREFIX
                     + "%{y:,.2f}<br>"
                     "Anomalies: %{customdata[0]}<br>"
+                    "Highest severity: %{customdata[2]}<br>"
                     "Anomalous namespace cost: "
                     + CURRENCY_PREFIX
                     + "%{customdata[1]:,.2f}"
@@ -334,6 +372,7 @@ def build_dashboard() -> None:
         "project_name",
         "cluster_name",
         "namespace_name",
+        "severity",
         "actual_value",
         "baseline_value",
         "threshold_value",
@@ -524,18 +563,19 @@ def build_dashboard() -> None:
                 legendgroup=f"actual_cost_{namespace_label}",
                 showlegend=False,
                 marker={
-                    "size": 10,
-                    "color": "red",
+                    "size": 11,
+                    "color": namespace_anomalies["severity"].map(SEVERITY_COLORS),
                     "line": {"color": namespace_color, "width": 2},
                 },
                 customdata=namespace_anomalies[
-                    ["project_name", "cluster_name", "namespace_name"]
+                    ["project_name", "cluster_name", "namespace_name", "severity"]
                 ],
                 hovertemplate=(
                     "Date: %{x}<br>"
                     "Project: %{customdata[0]}<br>"
                     "Cluster: %{customdata[1]}<br>"
                     "Namespace: %{customdata[2]}<br>"
+                    "Severity: %{customdata[3]}<br>"
                     "Anomaly value: "
                     + CURRENCY_PREFIX
                     + "%{y:,.2f}"
@@ -590,6 +630,22 @@ def build_dashboard() -> None:
         )
     )
     st.plotly_chart(anomaly_fig, width="stretch")
+
+    severity_fig = px.bar(
+        filtered_anomalies.groupby("severity", as_index=False)
+        .size()
+        .rename(columns={"size": "anomaly_count"}),
+        x="severity",
+        y="anomaly_count",
+        category_orders={"severity": SEVERITY_ORDER},
+        color="severity",
+        color_discrete_map=SEVERITY_COLORS,
+        title="Anomalies by severity",
+    )
+    severity_fig.update_traces(
+        hovertemplate="Severity: %{x}<br>Anomalies: %{y}<extra></extra>"
+    )
+    st.plotly_chart(severity_fig, width="stretch")
 
 
 if __name__ == "__main__":

@@ -93,6 +93,15 @@ def test_severity_is_assigned_for_created_notifications() -> None:
     assert high["severity"] == "HIGH"
 
 
+def test_notification_reuses_existing_anomaly_severity() -> None:
+    anomaly = _anomaly(actual=250.0, baseline=0.0, threshold=120.0)
+    anomaly["severity"] = "MEDIUM"
+
+    notification = generate_notifications([anomaly], notification_threshold=0.0)[0]
+
+    assert notification["severity"] == "MEDIUM"
+
+
 def test_notification_contains_required_fields() -> None:
     notifications = generate_notifications([_anomaly(actual=301.0, baseline=100.0, threshold=120.0)])
 

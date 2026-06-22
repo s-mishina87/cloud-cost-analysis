@@ -58,6 +58,7 @@ def initialize_database(db_path: Path) -> None:
                 actual_value REAL NOT NULL,
                 baseline_value REAL,
                 threshold_value REAL NOT NULL,
+                severity TEXT NOT NULL,
                 is_anomaly INTEGER NOT NULL,
                 FOREIGN KEY(namespace_cost_id) REFERENCES NamespaceCost(id)
             );
@@ -188,9 +189,10 @@ def persist_pipeline_data(
                     actual_value,
                     baseline_value,
                     threshold_value,
+                    severity,
                     is_anomaly
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     namespace_cost_id,
@@ -199,6 +201,7 @@ def persist_pipeline_data(
                     float(anomaly["actual_value"]),
                     float(anomaly["baseline_value"]),
                     float(anomaly["threshold_value"]),
+                    anomaly["severity"],
                     int(anomaly["is_anomaly"]),
                 ),
             )
