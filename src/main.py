@@ -13,6 +13,11 @@ from src.anomaly_detection import detect_anomalies
 from src.data_generator import generate_structured_data
 from src.email_notifier import send_notifications_by_email
 from src.paths import DB_PATH
+from src.standard_deviation_detection import (
+    calculate_namespace_rolling_stddev_details,
+    calculate_rolling_stddev_summary,
+    detect_anomalies_rolling_stddev,
+)
 from src.storage import debug_sqlite, persist_pipeline_data
 from src.teams_notifier import send_notifications_to_teams
 
@@ -45,6 +50,55 @@ def _print_sqlite_debug(db_path: Path) -> None:
             print(f"    {sample_row}")
 
 
+def _print_namespace_stddev_details(rows: list[dict]) -> None:
+    """Print per-namespace rolling standard deviation comparison details."""
+    print("Rolling stddev details by namespace, top 20 by average stddev:")
+    if not rows:
+        print("  (no namespace stddev details)")
+        return
+
+    for row in rows:
+        namespace_label = f"{row['project_name']}/{row['cluster_name']}/{row['namespace_name']}"
+        print(
+            f"  - {namespace_label}: "
+            f"rolling_mean={row['rolling_mean']}, "
+            f"rolling_stddev={row['rolling_stddev']}, "
+            f"threshold={row['threshold']}, "
+            f"actual_value={row['actual_value']}, "
+            f"actual-threshold={row['actual_minus_threshold']}"
+        )
+
+
+def _print_rolling_stddev_anomaly_details(rows: list[dict]) -> None:
+    """Print details for anomalies found by the rolling standard deviation comparison."""
+    print("Rolling stddev detected anomaly details:")
+    if not rows:
+        print("  (no rolling stddev anomalies)")
+        return
+
+    sorted_rows = sorted(
+        rows,
+        key=lambda row: (
+            row["project_name"],
+            row["cluster_name"],
+            row["namespace_name"],
+            row["cost_date"],
+        ),
+    )
+    for row in sorted_rows:
+        namespace_label = f"{row['project_name']}/{row['cluster_name']}/{row['namespace_name']}"
+        actual_minus_threshold = round(row["actual_value"] - row["threshold_value"], 2)
+        print(
+            f"  - {row['cost_date']} {namespace_label}: "
+            f"rolling_mean={row['rolling_average']}, "
+            f"rolling_stddev={row['rolling_stddev']}, "
+            f"threshold={row['threshold_value']}, "
+            f"actual_value={row['actual_value']}, "
+            f"actual-threshold={actual_minus_threshold}, "
+            f"severity={row['severity']}"
+        )
+
+
 def main() -> None:
     """Run the corrected local prototype end-to-end with clear step output."""
     # Step 1 starts here: generate synthetic source data for the full pipeline.
@@ -69,9 +123,30 @@ def main() -> None:
 
     # Step 3 starts here: detect anomalous namespace total costs over time.
     anomalies = detect_anomalies(allocated_costs, window_size=7, deviation_factor=1.5)
+    rolling_stddev_anomalies = detect_anomalies_rolling_stddev(
+        allocated_costs,
+        window_size=7,
+        stddev_factor=2.0,
+    )
+    rolling_stddev_summary = calculate_rolling_stddev_summary(allocated_costs, window_size=7)
+    rolling_stddev_namespace_details = calculate_namespace_rolling_stddev_details(
+        allocated_costs,
+        window_size=7,
+        stddev_factor=2.0,
+        limit=20,
+    )
 
     print("\n[Step 3: Anomaly detection]")
     print(f"Detected anomalies: {len(anomalies)}")
+    print(f"Rolling stddev comparison anomalies: {len(rolling_stddev_anomalies)}")
+    print(
+        "Rolling stddev comparison stats: "
+        f"avg per namespace={rolling_stddev_summary['average_stddev_per_namespace']}, "
+        f"min={rolling_stddev_summary['minimum_stddev']}, "
+        f"max={rolling_stddev_summary['maximum_stddev']}"
+    )
+    _print_namespace_stddev_details(rolling_stddev_namespace_details)
+    _print_rolling_stddev_anomaly_details(rolling_stddev_anomalies)
     _preview_rows(anomalies, "Example anomaly rows:")
     print("Target table: Anomaly")
 
@@ -89,9 +164,9 @@ def main() -> None:
     print(teams_result["message"])
 
     # Step 4c is optional: send internal notifications by email.
-    email_result = send_notifications_by_email(notifications)
-    print("\n[Step 4c: Optional email delivery]")
-    print(email_result["message"])
+    #email_result = send_notifications_by_email(notifications)
+    #print("\n[Step 4c: Optional email delivery]")
+    #print(email_result["message"])
 
     # Step 5 starts here: persist all entities into normalized SQLite tables.
     persisted = persist_pipeline_data(
