@@ -9,6 +9,28 @@ import sqlite3
 from pathlib import Path
 
 
+def _bool_to_sqlite(value: object) -> int | None:
+    """Convert Python bool-like values to SQLite-friendly 1/0/NULL."""
+    if value is None:
+        return None
+    return 1 if bool(value) else 0
+
+
+def _change_type(anomaly: dict) -> str | None:
+    """Classify anomaly change speed for database storage."""
+    daily_change = anomaly.get("daily_change")
+    if daily_change is None:
+        return None
+
+    if float(daily_change) == 0:
+        return "NO_SIGNIFICANT_CHANGE"
+
+    if bool(anomaly.get("is_fast_change")):
+        return "FAST_CHANGE"
+
+    return "GRADUAL_CHANGE"
+
+
 def initialize_database(db_path: Path) -> None:
     """Create the SQLite schema for the agreed v1 model."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -60,6 +82,11 @@ def initialize_database(db_path: Path) -> None:
                 threshold_value REAL NOT NULL,
                 severity TEXT NOT NULL,
                 is_anomaly INTEGER NOT NULL,
+                daily_change REAL,
+                average_absolute_change REAL,
+                change_threshold REAL,
+                is_fast_change INTEGER,
+                change_type TEXT,
                 FOREIGN KEY(namespace_cost_id) REFERENCES NamespaceCost(id)
             );
 
@@ -190,9 +217,14 @@ def persist_pipeline_data(
                     baseline_value,
                     threshold_value,
                     severity,
-                    is_anomaly
+                    is_anomaly,
+                    daily_change,
+                    average_absolute_change,
+                    change_threshold,
+                    is_fast_change,
+                    change_type
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     namespace_cost_id,
@@ -203,6 +235,11 @@ def persist_pipeline_data(
                     float(anomaly["threshold_value"]),
                     anomaly["severity"],
                     int(anomaly["is_anomaly"]),
+                    anomaly.get("daily_change"),
+                    anomaly.get("average_absolute_change"),
+                    anomaly.get("change_threshold"),
+                    _bool_to_sqlite(anomaly.get("is_fast_change")),
+                    _change_type(anomaly),
                 ),
             )
             anomaly_id = cursor.lastrowid
