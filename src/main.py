@@ -14,7 +14,13 @@ from src.data_generator import generate_structured_data
 from src.email_notifier import send_notifications_by_email
 from src.paths import DB_PATH
 from src.storage import debug_sqlite, persist_pipeline_data
-from src.teams_notifier import send_notifications_to_teams
+
+
+DB_PATH = Path("data") / "cloud_costs.db"
+WINDOW_SIZE = 7
+DEVIATION_FACTOR = 1.5
+CHANGE_FACTOR = 2.0
+NOTIFICATION_THRESHOLD = 200.0
 
 
 def _preview_rows(rows: list[dict], label: str, sample_size: int = 5) -> None:
@@ -68,7 +74,12 @@ def main() -> None:
     print("Updated fields: usage_cost, overhead_cost, total_cost")
 
     # Step 3 starts here: detect anomalous namespace total costs over time.
-    anomalies = detect_anomalies(allocated_costs, window_size=7, deviation_factor=1.5)
+    anomalies = detect_anomalies(
+        allocated_costs,
+        window_size=WINDOW_SIZE,
+        deviation_factor=DEVIATION_FACTOR,
+        change_factor=CHANGE_FACTOR,
+    )
 
     print("\n[Step 3: Anomaly detection]")
     print(f"Detected anomalies: {len(anomalies)}")
@@ -76,22 +87,15 @@ def main() -> None:
     print("Target table: Anomaly")
 
     # Step 4 starts here: convert detected anomalies into notifications.
-    notifications = generate_notifications(anomalies)
+    notifications = generate_notifications(
+        anomalies,
+        notification_threshold=NOTIFICATION_THRESHOLD,
+    )
 
     print("\n[Step 4: Notification generation]")
     print(f"Notifications created: {len(notifications)}")
     _preview_rows(notifications, "Example notification rows:")
     print("Target table: Notification")
-
-    # Step 4b is optional: send internal notifications to Teams webhook.
-    teams_result = send_notifications_to_teams(notifications)
-    print("\n[Step 4b: Optional Teams delivery]")
-    print(teams_result["message"])
-
-    # Step 4c is optional: send internal notifications by email.
-    email_result = send_notifications_by_email(notifications)
-    print("\n[Step 4c: Optional email delivery]")
-    print(email_result["message"])
 
     # Step 5 starts here: persist all entities into normalized SQLite tables.
     persisted = persist_pipeline_data(
@@ -103,6 +107,21 @@ def main() -> None:
         anomalies=anomalies,
         notifications=notifications,
     )
+
+    print("\n[Step 5: Persist to SQLite]")
+    print(f"Persisted NamespaceCost records: {persisted['NamespaceCost']}")
+    print(f"Persisted anomalies: {persisted['Anomaly']}")
+    print(f"Persisted notifications: {persisted['Notification']}")
+
+    # Step 6 is optional: send internal notifications by email after persistence.
+    email_result = send_notifications_by_email(notifications)
+    print("\n[Step 6: Optional email delivery]")
+    print(f"message: {email_result['message']}")
+    print(f"enabled: {email_result['enabled']}")
+    print(f"total: {email_result['total']}")
+    print(f"sent: {email_result['sent']}")
+    print(f"failed: {email_result['failed']}")
+    print(f"recipients: {email_result['recipients']}")
 
     print("\n[Final summary]")
     print(f"Total generated NamespaceCost records: {persisted['NamespaceCost']}")
