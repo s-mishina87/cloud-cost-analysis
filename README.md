@@ -2,6 +2,8 @@
 
 Project scaffold for cloud cost analysis, anomaly detection, and alerting.
 
+Teams delivery was considered, but the final demo uses email notifications because no suitable Teams webhook was available.
+
 ## Structure
 
 - src: application code

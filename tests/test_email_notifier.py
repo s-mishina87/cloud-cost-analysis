@@ -1,4 +1,4 @@
-from src.email_notifier import send_notifications_by_email
+from src.email_notifier import _build_summary_body, send_notifications_by_email
 
 
 def _notification(ref: str = "a-1", severity: str = "MEDIUM") -> dict:
@@ -194,6 +194,31 @@ def test_multiple_notifications_are_in_one_email_body(monkeypatch) -> None:
     assert "a-2" in captured["body"]
     assert "LOW" in captured["body"]
     assert "HIGH" in captured["body"]
+
+
+def test_build_summary_body_includes_change_metadata() -> None:
+    body = _build_summary_body(
+        [
+            {
+                "anomaly_ref_key": "2026-01-08|retail-prod|cluster-eu-west-1|payments|moving_average_threshold",
+                "notification_date": "2026-01-10T12:00:00+00:00",
+                "severity": "HIGH",
+                "status": "NEW",
+                "message": "Spike detected",
+                "daily_change": 75.0,
+                "average_absolute_change": 20.0,
+                "change_threshold": 40.0,
+                "is_fast_change": True,
+                "change_type": "FAST_CHANGE",
+            }
+        ]
+    )
+
+    assert "Change type: FAST_CHANGE" in body
+    assert "Daily change: 75.0" in body
+    assert "Average absolute change: 20.0" in body
+    assert "Change threshold: 40.0" in body
+    assert "Fast change: True" in body
 
 
 def test_multiple_recipients_are_parsed_correctly(monkeypatch) -> None:

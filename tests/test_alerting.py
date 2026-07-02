@@ -116,3 +116,36 @@ def test_notification_contains_required_fields() -> None:
     }.issubset(notification)
     assert notification["status"] == "NEW"
     assert isinstance(notification["notification_date"], str)
+
+
+def test_notification_includes_change_metadata_and_message_details() -> None:
+    anomalies = [
+        {
+            "anomaly_ref_key": "2026-01-08|retail-prod|cluster-eu-west-1|payments|moving_average_threshold",
+            "cost_date": "2026-01-08",
+            "project_name": "retail-prod",
+            "cluster_name": "cluster-eu-west-1",
+            "namespace_name": "payments",
+            "actual_value": 301.0,
+            "baseline_value": 100.0,
+            "threshold_value": 120.0,
+            "is_anomaly": 1,
+            "daily_change": 75.0,
+            "average_absolute_change": 20.0,
+            "change_threshold": 40.0,
+            "is_fast_change": True,
+        }
+    ]
+
+    notifications = generate_notifications(anomalies, notification_threshold=0.0)
+
+    assert len(notifications) == 1
+    notification = notifications[0]
+    assert notification["daily_change"] == 75.0
+    assert notification["average_absolute_change"] == 20.0
+    assert notification["change_threshold"] == 40.0
+    assert notification["is_fast_change"] is True
+    assert notification["change_type"] == "FAST_CHANGE"
+    assert "change_type=FAST_CHANGE" in notification["message"]
+    assert "daily_change=75.0" in notification["message"]
+    assert "change_threshold=40.0" in notification["message"]

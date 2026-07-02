@@ -80,6 +80,27 @@ def _build_summary_body(notifications: list[dict]) -> str:
         lines.append(f"{index}. Severity: {notification.get('severity', 'MEDIUM')}")
         lines.append(f"   Ref: {notification.get('anomaly_ref_key', 'n/a')}")
         lines.append(f"   Message: {notification.get('message', '')}")
+
+        change_type = notification.get("change_type")
+        if change_type is not None:
+            lines.append(f"   Change type: {change_type}")
+
+        daily_change = notification.get("daily_change")
+        if daily_change is not None:
+            lines.append(f"   Daily change: {daily_change}")
+
+        average_absolute_change = notification.get("average_absolute_change")
+        if average_absolute_change is not None:
+            lines.append(f"   Average absolute change: {average_absolute_change}")
+
+        change_threshold = notification.get("change_threshold")
+        if change_threshold is not None:
+            lines.append(f"   Change threshold: {change_threshold}")
+
+        is_fast_change = notification.get("is_fast_change")
+        if is_fast_change is not None:
+            lines.append(f"   Fast change: {is_fast_change}")
+
         lines.append("")
 
     return "\n".join(lines).strip() + "\n"
