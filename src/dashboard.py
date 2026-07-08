@@ -437,22 +437,22 @@ def build_dashboard() -> None:
     ]
 
     anomaly_value_fig = go.Figure()
-    baseline_range = (
+    moving_average_range = (
         anomaly_cost_series.dropna(subset=["moving_average"])
         .groupby("cost_date", as_index=False)
         .agg(
-            baseline_low=("moving_average", "min"),
-            baseline_high=("moving_average", "max"),
+            moving_average_low=("moving_average", "min"),
+            moving_average_high=("moving_average", "max"),
         )
     )
-    if not baseline_range.empty:
+    if not moving_average_range.empty:
         anomaly_value_fig.add_trace(
             go.Scatter(
-                x=baseline_range["cost_date"],
-                y=baseline_range["baseline_high"],
+                x=moving_average_range["cost_date"],
+                y=moving_average_range["moving_average_high"],
                 mode="lines",
-                name="Baseline range upper edge",
-                legendgroup="baseline_range",
+                name="Moving average baseline upper edge",
+                legendgroup="moving_average_range",
                 showlegend=False,
                 line={"width": 0, "color": "rgba(107, 114, 128, 0)"},
                 hoverinfo="skip",
@@ -460,11 +460,11 @@ def build_dashboard() -> None:
         )
         anomaly_value_fig.add_trace(
             go.Scatter(
-                x=baseline_range["cost_date"],
-                y=baseline_range["baseline_low"],
+                x=moving_average_range["cost_date"],
+                y=moving_average_range["moving_average_low"],
                 mode="lines",
-                name="Baseline range",
-                legendgroup="baseline_range",
+                name="Moving average baseline",
+                legendgroup="moving_average_range",
                 fill="tonexty",
                 fillcolor="rgba(107, 114, 128, 0.10)",
                 line={"width": 0, "color": "rgba(107, 114, 128, 0)"},
@@ -603,7 +603,7 @@ def build_dashboard() -> None:
         .agg(
             anomaly_count=("anomaly_id", "count"),
             max_actual_value=("actual_value", "max"),
-            avg_baseline=("moving_average", "mean"),
+            avg_moving_average=("moving_average", "mean"),
         )
         .sort_values("anomaly_count", ascending=False)
     )
@@ -611,7 +611,7 @@ def build_dashboard() -> None:
         anomalies_by_namespace,
         x="namespace_series",
         y="anomaly_count",
-        hover_data=["max_actual_value", "avg_baseline"],
+        hover_data=["max_actual_value", "avg_moving_average"],
         title="Anomalies by namespace",
     )
     anomaly_fig.update_traces(
@@ -621,7 +621,7 @@ def build_dashboard() -> None:
             "Max actual value: "
             + CURRENCY_PREFIX
             + "%{customdata[0]:,.2f}<br>"
-            "Average baseline: "
+            "Average moving average: "
             + CURRENCY_PREFIX
             + "%{customdata[1]:,.2f}"
             "<extra></extra>"

@@ -39,8 +39,8 @@ def detect_anomalies(records, window_size: int = 7, deviation_factor: float = 1.
 
         for i in range(window_size, len(sort_rows)):
             history = sort_rows[i - window_size:i]
-            baseline = sum(float(r["total_cost"]) for r in history) / window_size
-            threshold = baseline * deviation_factor
+            moving_avg = sum(float(r["total_cost"]) for r in history) / window_size
+            threshold = moving_avg * deviation_factor
             actual = float(sort_rows[i]["total_cost"])
 
             if actual > threshold:
@@ -68,7 +68,7 @@ def detect_anomalies(records, window_size: int = 7, deviation_factor: float = 1.
                     ),
                     "method": "moving_average_threshold",
                     "actual_value": round(actual, 2),
-                    "moving_average": round(baseline, 2),
+                    "moving_average": round(moving_avg, 2),
                     "threshold_value": round(threshold, 2),
                     "severity": severity_from_ratio(actual, threshold),
                     "is_anomaly": 1,

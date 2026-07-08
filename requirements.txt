@@ -1,7 +1,4 @@
 pandas==3.0.2
-numpy==2.4.4
-scikit-learn==1.8.0
-matplotlib==3.10.8
 plotly==6.6.0
 pytest==9.0.2
 streamlit==1.56.0

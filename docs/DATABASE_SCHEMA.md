@@ -153,14 +153,14 @@ id=103, cost_date="2026-04-02", namespace_id=1, usage_cost=75.00, overhead_cost=
 | `anomaly_date` | TEXT | NOT NULL | Datum der Anomalie (ISO format) |
 | `method` | TEXT | NOT NULL | Erkennungsmethode (z.B. "moving_average_threshold") |
 | `actual_value` | REAL | NOT NULL | Tatsächliche total_cost an diesem Tag |
-| `baseline_value` | REAL | NOT NULL | Normales Niveau (7-Tage-Durchschnitt) |
-| `threshold_value` | REAL | NOT NULL | Schwelle (baseline × 1.5) |
+| `moving_average` | REAL | NOT NULL | Moving average = average of the previous 7 days. It is used as the baseline for comparison. |
+| `threshold_value` | REAL | NOT NULL | Schwelle (moving_average × 1.5) |
 | `is_anomaly` | INTEGER | NOT NULL | Flag (1 = Ja, 0 = Nein) |
 
 **Beispielzeile:**
 ```
 id=501, namespace_cost_id=101, anomaly_date="2026-04-01", method="moving_average_threshold",
-        actual_value=96.00, baseline_value=60.43, threshold_value=90.65, is_anomaly=1
+        actual_value=96.00, moving_average=60.43, threshold_value=90.65, is_anomaly=1
 ```
 
 **Keys:**
@@ -169,7 +169,7 @@ id=501, namespace_cost_id=101, anomaly_date="2026-04-01", method="moving_average
 
 **Bedeutung der Felder:**
 - `actual_value`: Was real passiert ist (96.00)
-- `baseline_value`: Was normalerweise ist (60.43, der 7-Tage-Durchschnitt)
+- `moving_average`: Was normalerweise ist (60.43, der 7-Tage-Durchschnitt)
 - `threshold_value`: Ab wann wird es als Problem klassifiziert (90.65)
 - `is_anomaly`: 1 = ja, das ist eine Anomalie (weil 96 > 90.65)
 
@@ -195,7 +195,7 @@ id=501, namespace_cost_id=101, anomaly_date="2026-04-01", method="moving_average
 ```
 id=601, anomaly_id=501, notification_date="2026-04-01T10:30:00+00:00",
         severity="MEDIUM", status="NEW",
-        message="Cost anomaly in payments (retail-prod/main) on 2026-04-01: actual=96.00, baseline=60.43, threshold=90.65"
+        message="Cost anomaly in payments (retail-prod/main) on 2026-04-01: actual=96.00, moving_average=60.43, threshold=90.65"
 ```
 
 **Keys:**
@@ -373,7 +373,7 @@ ORDER BY n.notification_date DESC;
                         ↓
              ┌──────────────────────────────────────────────┐
              │        ANOMALY                               │
-             │ id | actual | baseline | threshold | nc_id  │
+             │ id | actual | moving_average | threshold | nc_id  │
              │501 | 96.00  | 60.43    | 90.65     | 101    │
              └──────────────┬─────────────────────────────┘
                             │ (1:N)
