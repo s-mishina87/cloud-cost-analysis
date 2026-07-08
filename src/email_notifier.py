@@ -1,6 +1,6 @@
-"""Optional email delivery for internal notifications.
+"""Send notification summaries by email.
 
-This module is separate from anomaly detection and alert generation.
+This module is separate from anomaly detection and notification creation.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def _read_local_dotenv(path: str = ".env") -> dict[str, str]:
 
 
 def _read_email_config() -> tuple[bool, dict]:
-    """Read SMTP config from environment and validate required values."""
+    """Read SMTP settings and check if required values exist."""
     dotenv_values = _read_local_dotenv()
 
     def _get_config_value(key: str, default: str = "") -> str:
@@ -73,7 +73,7 @@ def _read_email_config() -> tuple[bool, dict]:
 
 
 def _build_summary_body(notifications: list[dict]) -> str:
-    """Build a simple plain-text summary body for all notifications."""
+    """Build a simple plain text email body for all notifications."""
     lines = ["Cloud cost alert summary", "", f"Total notifications: {len(notifications)}", ""]
 
     for index, notification in enumerate(notifications, start=1):
@@ -107,9 +107,9 @@ def _build_summary_body(notifications: list[dict]) -> str:
 
 
 def send_notifications_by_email(notifications: list[dict]) -> dict:
-    """Send one summary email for generated notifications.
+    """Send one summary email for the generated notifications.
 
-    If SMTP is missing or sending fails, this returns a status.
+    If SMTP is missing or sending fails, this function returns a status.
     The pipeline keeps running.
     """
     if not notifications:

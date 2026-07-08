@@ -1,6 +1,6 @@
-"""Create notification records from detected anomalies.
+"""Create notifications from detected anomalies.
 
-This module only prepares notification data. Delivery is handled separately.
+This module only prepares notification data. It does not send anything.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from src.anomaly_detection import severity_from_ratio
 
 
 def _change_type(anomaly: dict) -> str | None:
-    """Classify anomaly change speed when source data has no precomputed label."""
+    """Return a change type when the anomaly does not have one yet."""
     daily_change = anomaly.get("daily_change")
     if daily_change is None:
         return None
@@ -29,8 +29,7 @@ def generate_notifications(
     anomalies: list[dict],
     notification_threshold: float = 200.0,
 ) -> list[dict]:
-    """Create local notifications for materially important anomalies."""
-    # Detection finds unusual costs; alerting decides which ones to notify.
+    """Create notifications for anomalies that are important enough.Detection finds unusual costs, alerting decides which ones to notify."""
     if not anomalies:
         return []
     if notification_threshold < 0:
@@ -43,7 +42,6 @@ def generate_notifications(
         baseline = float(anomaly.get("baseline_value", 0.0) or 0.0)
         threshold = float(anomaly.get("threshold_value", 0.0) or 0.0)
 
-        # Only relevant anomalies become notifications.
         absolute_difference = actual - baseline
         if absolute_difference <= notification_threshold:
             continue

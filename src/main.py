@@ -1,4 +1,5 @@
-"""
+"""Run the full cloud cost pipeline.
+
 Pipeline model:
 Project -> Cluster -> Namespace -> NamespaceCost -> Anomaly -> Notification
 """
@@ -23,7 +24,7 @@ NOTIFICATION_THRESHOLD = 200.0
 
 
 def _preview_rows(rows: list[dict], label: str, sample_size: int = 5) -> None:
-    """Print a compact sample block to keep each step understandable."""
+    """Print a few example rows."""
     print(label)
     if not rows:
         print("  (no rows)")
@@ -33,7 +34,7 @@ def _preview_rows(rows: list[dict], label: str, sample_size: int = 5) -> None:
 
 
 def _print_sqlite_debug(db_path: Path) -> None:
-    """Print table names, row counts, and first five rows per table."""
+    """Print table names, row counts, and a small sample."""
     print("\n[SQLite debug]")
     summary = debug_sqlite(db_path)
     if not summary:
@@ -51,8 +52,8 @@ def _print_sqlite_debug(db_path: Path) -> None:
 
 
 def main() -> None:
-    """Run the local pipeline end-to-end with readable console output."""
-    # Synthetic data keeps this prototype self-contained and easy to demo.
+    """Run the full pipeline and print the main steps."""
+    # Synthetic data keeps the project easy to run and demo.
     dataset = generate_structured_data(days=90, project_count=3, clusters_per_project=2, seed=42)
 
     print("\n[Step 1: Data generation]")
@@ -63,7 +64,7 @@ def main() -> None:
     _preview_rows(dataset["namespace_costs"], "Example NamespaceCost rows:")
     print("Target tables: Project, Cluster, Namespace, NamespaceCost")
 
-    # Overhead is created in the generator and allocated here by usage share.
+    # Overhead is created in the generator and split here by usage share.
     allocated_costs = apply_overhead_allocation(dataset["namespace_costs"], dataset["cluster_overheads"])
 
     print("\n[Step 2: Allocation]")
@@ -72,7 +73,7 @@ def main() -> None:
     _preview_rows(allocated_costs, "Example allocated rows:")
     print("Updated fields: usage_cost, overhead_cost, total_cost")
 
-    # Namespace is the smallest analysis level in this project.
+    # Namespace is the smallest analysis level here.
     anomalies = detect_anomalies(
         allocated_costs,
         window_size=WINDOW_SIZE,
@@ -85,7 +86,7 @@ def main() -> None:
     _preview_rows(anomalies, "Example anomaly rows:")
     print("Target table: Anomaly")
 
-    # Alerting just filters and formats anomaly results.
+    # Alerting filters and formats anomaly results.
     notifications = generate_notifications(
         anomalies,
         notification_threshold=NOTIFICATION_THRESHOLD,
@@ -96,7 +97,7 @@ def main() -> None:
     _preview_rows(notifications, "Example notification rows:")
     print("Target table: Notification")
 
-    # SQLite is enough for this local prototype.
+    # SQLite is enough for this project.
     persisted = persist_pipeline_data(
         db_path=DB_PATH,
         projects=dataset["projects"],
@@ -112,7 +113,7 @@ def main() -> None:
     print(f"Persisted anomalies: {persisted['Anomaly']}")
     print(f"Persisted notifications: {persisted['Notification']}")
 
-    # Email is optional and does not block the pipeline.
+    # Email is optional, and the pipeline keeps running without it.
     email_result = send_notifications_by_email(notifications)
     print("\n[Step 6: Optional email delivery]")
     print(f"message: {email_result['message']}")

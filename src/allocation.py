@@ -1,15 +1,13 @@
-"""Overhead allocation for NamespaceCost records.
+"""Split cluster overhead across NamespaceCost records.
 
-This module applies the agreed formula:
-namespace_overhead = cluster_overhead * namespace_usage_share
-where namespace_usage_share = namespace_usage / total_cluster_usage.
+The overhead is split by usage share inside each cluster and day.
 """
 
 from __future__ import annotations
 
 
 def apply_overhead_allocation(namespace_costs: list[dict], cluster_overheads: list[dict]) -> list[dict]:
-    """Distribute cluster overhead proportionally across namespaces for each day."""
+    """Split cluster overhead across namespaces for each day."""
     overhead_map = {
         (row["cost_date"], row["project_name"], row["cluster_name"]): float(row.get("cluster_overhead_cost", 0.0) or 0.0)
         for row in cluster_overheads

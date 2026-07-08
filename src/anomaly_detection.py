@@ -1,21 +1,21 @@
-"""Detect namespace cost anomalies with a moving-average baseline.
+"""Detect cost anomalies for each namespace.
 
-The method uses a 7-day history by default and checks if current cost is
-above baseline * threshold factor.
+By default, it uses the previous 7 days as a baseline and checks if the
+current value is above the threshold.
 """
 
 from __future__ import annotations
 
 
 def _total_cost(row: dict) -> float:
-    """Return total_cost as a float with a safe default."""
+    """Return total_cost as a float, or 0.0 if it is missing."""
     return float(row.get("total_cost", 0.0) or 0.0)
 
 
 def _average_absolute_change(rows: list[dict]) -> float:
-    """Return the average size of recent day-to-day changes.
+    """Return the average size of recent daily changes.
 
-    Uses absolute differences so rises and drops do not cancel each other out.
+    Absolute differences are used, so increases and decreases do not cancel out.
     """
     if len(rows) < 2:
         return 0.0
@@ -27,7 +27,7 @@ def _average_absolute_change(rows: list[dict]) -> float:
 
 
 def severity_from_ratio(actual_value: float, threshold_value: float) -> str:
-    """Classify anomaly severity from how far actual cost exceeds the threshold."""
+    """Return the anomaly severity based on the actual/threshold ratio."""
     if threshold_value <= 0:
         return "MEDIUM"
 
@@ -45,7 +45,7 @@ def detect_anomalies(
     deviation_factor: float = 1.5,
     change_factor: float = 2.0,
 ) -> list[dict]:
-    """Detect anomalies and add change metadata for later interpretation."""
+    """Detect anomalies and add extra change information."""
     if not records:
         return []
     if window_size <= 0:
@@ -60,7 +60,7 @@ def detect_anomalies(
 
     anomalies: list[dict] = []
 
-    # Namespace is the smallest analysis unit, so each one is checked separately.
+    # Namespace is the smallest analysis unit, so each one is checked on its own.
     for _, namespace_rows in grouped.items():
         sorted_rows = sorted(namespace_rows, key=lambda item: item["cost_date"])
 
@@ -97,7 +97,7 @@ def detect_anomalies(
                     "average_absolute_change": round(average_absolute_change, 2),
                     "change_threshold": round(change_threshold, 2),
                     "is_fast_change": is_fast_change,
-                    # Kept so dashboard and tests can read these values directly.
+                    # Kept so dashboard and tests can use these values directly.
                     "moving_average": round(moving_average, 2),
                     "threshold": round(threshold, 2),
                 }

@@ -1,4 +1,4 @@
-"""Store pipeline results in local SQLite tables."""
+"""Store pipeline results in SQLite tables."""
 
 from __future__ import annotations
 
@@ -7,14 +7,14 @@ from pathlib import Path
 
 
 def _bool_to_sqlite(value: object) -> int | None:
-    """Convert Python bool-like values to SQLite-friendly 1/0/NULL."""
+    """Convert True, False or None to 1, 0, or NULL for SQLite."""
     if value is None:
         return None
     return 1 if bool(value) else 0
 
 
 def _change_type(anomaly: dict) -> str | None:
-    """Classify anomaly change speed for database storage."""
+    """Return the change type to save in the database."""
     daily_change = anomaly.get("daily_change")
     if daily_change is None:
         return None
@@ -29,13 +29,15 @@ def _change_type(anomaly: dict) -> str | None:
 
 
 def initialize_database(db_path: Path) -> None:
-    """Create the SQLite schema used by this project."""
+    """Create the SQLite tables used in this project."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     with sqlite3.connect(db_path) as connection:
         connection.execute("PRAGMA foreign_keys = ON")
         cursor = connection.cursor()
 
+        # SQLite uses SQL commands to create tables, so the schema is kept
+        # here as one SQL script.
         cursor.executescript(
             """
             CREATE TABLE IF NOT EXISTS Project (
@@ -102,7 +104,7 @@ def initialize_database(db_path: Path) -> None:
 
 
 def reset_database(db_path: Path) -> None:
-    """Drop user tables so each pipeline run starts clean."""
+    """Drop existing tables so each pipeline run starts clean."""
     if not db_path.exists():
         return
 
@@ -133,7 +135,7 @@ def persist_pipeline_data(
     anomalies: list[dict],
     notifications: list[dict],
 ) -> dict[str, int]:
-    """Persist generated and processed data into SQLite."""
+    """Save generated and processed data to SQLite."""
     reset_database(db_path)
     initialize_database(db_path)
 
@@ -285,7 +287,7 @@ def persist_pipeline_data(
 
 
 def debug_sqlite(db_path: Path) -> list[dict]:
-    """Return table names, row counts, and first five rows for debugging."""
+    """Return table names, row counts, and a small sample for debugging."""
     if not db_path.exists():
         return []
 

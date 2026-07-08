@@ -1,7 +1,7 @@
-"""Generate synthetic cloud cost data for the local project pipeline.
+"""Generate synthetic cloud cost data for the pipeline.
 
-The module creates Project, Cluster, Namespace, NamespaceCost, and
-cluster_overheads records. Overhead is allocated later in allocation.py.
+It creates projects, clusters, namespaces, namespace costs, and cluster
+overhead. The overhead is allocated later in allocation.py.
 """
 
 from __future__ import annotations
@@ -43,12 +43,12 @@ DEFAULT_START_DATE = date(2026, 1, 1)
 
 
 def _pick_cluster_names(rng: Random, count: int) -> list[str]:
-    """Pick unique cluster names from the local name pool."""
+    """Pick unique cluster names from the name list."""
     return rng.sample(CLUSTER_NAME_POOL, k=count)
 
 
 def _pick_namespace_names(rng: Random, count: int) -> list[str]:
-    """Pick namespace names and always include anomaly scenario namespaces."""
+    """Pick namespace names and always include the anomaly namespaces."""
     if count < len(ANOMALY_CRITICAL_NAMESPACES):
         raise ValueError(
             f"count must be >= {len(ANOMALY_CRITICAL_NAMESPACES)} to include all anomaly-critical namespaces"
@@ -75,7 +75,7 @@ def _validate_generation_inputs(
     min_namespaces: int,
     max_namespaces: int,
 ) -> None:
-    """Validate generator inputs early."""
+    """Check if the generator inputs are valid."""
     if days <= 0:
         raise ValueError("days must be > 0")
     if project_count <= 0:
@@ -105,9 +105,9 @@ def _validate_generation_inputs(
 
 
 def _namespace_base_cost(namespace_name: str, namespace_type: str, rng: Random) -> float:
-    """Return a baseline cost per namespace type.
+    """Return a base cost for one namespace.
 
-    Payments and checkout are intentionally larger so anomaly scenarios stand out.
+    Payments and checkout are a bit larger so their anomaly cases are easier to see.
     """
     if namespace_name in {"payments", "checkout"}:
         return rng.uniform(150.0, 200.0)
@@ -128,7 +128,7 @@ def _usage_for_day(
     rng: Random,
     day_of_week: int,
 ) -> float:
-    """Generate daily usage with normal variation and planned anomaly scenarios."""
+    """Generate one daily usage value with normal variation and planned anomalies."""
     # System namespaces are usually more stable than app namespaces.
     if namespace_name == "monitoring" or namespace_type == "system":
         variation = rng.uniform(-0.06, 0.06)
@@ -141,22 +141,22 @@ def _usage_for_day(
 
     value = base_cost * (1 + variation)
 
-    # Weekend traffic is lower, especially for application namespaces.
+    # Weekend traffic is lower, especially for app namespaces.
     if day_of_week >= 5:
         if namespace_type == "system":
             value *= rng.uniform(0.88, 0.96)
         else:
             value *= rng.uniform(0.60, 0.75)
 
-    # Intentional scenario 1: sharp spike for payments.
+    # Planned scenario 1: sharp spike for payments.
     if namespace_name == "payments" and day_index in {55, 56, 57}:
         value *= 3.0
 
-    # Intentional scenario 2: gradual increase for monitoring.
+    # Planned scenario 2: gradual increase for monitoring.
     if namespace_name == "monitoring" and day_index >= 60:
         value += (day_index - 59) * 0.8
 
-    # Intentional scenario 3: temporary jump for checkout.
+    # Planned scenario 3: temporary jump for checkout.
     if namespace_name == "checkout" and 40 <= day_index <= 43:
         value += 45.0
 
@@ -172,9 +172,9 @@ def generate_structured_data(
     seed: int = 42,
     start_date: date | None = None,
 ) -> dict[str, list[dict]]:
-    """Generate local pipeline input data.
+    """Generate input data for the full pipeline.
 
-    A fixed seed and start date make demos and tests reproducible.
+    A fixed seed and start date help keep tests and demos consistent.
     """
     _validate_generation_inputs(
         days=days,
@@ -184,7 +184,7 @@ def generate_structured_data(
         max_namespaces=max_namespaces,
     )
 
-    # Keep generation deterministic so tests and demos get same data.
+    # Keep generation deterministic so tests and demos get the same data.
     rng = Random(seed)
     effective_start_date = start_date or DEFAULT_START_DATE
 

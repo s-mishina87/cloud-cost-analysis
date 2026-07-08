@@ -1,4 +1,4 @@
-"""Streamlit dashboard for cloud cost and anomaly analysis."""
+"""Streamlit dashboard for cloud cost and anomaly results."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ SEVERITY_COLORS = {
 
 
 def widen_sidebar() -> None:
-    """Give long project/cluster/namespace filter labels enough room."""
+    """Make the sidebar wider for long filter names."""
     st.markdown(
         f"""
         <style>
@@ -74,7 +74,7 @@ def widen_sidebar() -> None:
 
 
 def add_namespace_series_label(data: pd.DataFrame) -> pd.DataFrame:
-    """Add a unique project/cluster/namespace label for filtering and charts."""
+    """Add one combined label for filters and charts."""
     data = data.copy()
     data["namespace_series"] = (
         data["project_name"] + " / " + data["cluster_name"] + " / " + data["namespace_name"]
@@ -83,12 +83,12 @@ def add_namespace_series_label(data: pd.DataFrame) -> pd.DataFrame:
 
 
 def format_euro(value: float) -> str:
-    """Format money values in English numeric style with euro currency."""
+    """Format a number as euro currency."""
     return f"{CURRENCY_PREFIX}{value:,.2f}"
 
 
 def load_costs(connection: sqlite3.Connection) -> pd.DataFrame:
-    """Load namespace-level costs with project and cluster context."""
+    """Load namespace costs together with project and cluster names."""
     return pd.read_sql_query(
         """
         SELECT
@@ -112,7 +112,7 @@ def load_costs(connection: sqlite3.Connection) -> pd.DataFrame:
 
 
 def load_anomalies(connection: sqlite3.Connection) -> pd.DataFrame:
-    """Load detected anomalies with their affected namespace context."""
+    """Load anomalies together with their project, cluster, and namespace."""
     return pd.read_sql_query(
         """
         SELECT
@@ -142,7 +142,7 @@ def load_anomalies(connection: sqlite3.Connection) -> pd.DataFrame:
 
 
 def build_dashboard() -> None:
-    """Render the experimental dashboard."""
+    """Build and show the dashboard."""
     widen_sidebar()
     st.title("Cloud Cost Analysis")
 

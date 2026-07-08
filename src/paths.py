@@ -1,4 +1,4 @@
-"""Shared filesystem paths for the local prototype."""
+"""Common file paths used in the project."""
 
 from __future__ import annotations
 
