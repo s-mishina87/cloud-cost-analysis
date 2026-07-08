@@ -107,7 +107,11 @@ def _build_summary_body(notifications: list[dict]) -> str:
 
 
 def send_notifications_by_email(notifications: list[dict]) -> dict:
-    """Send one summary email for generated notifications."""
+    """Send one summary email for generated notifications.
+
+    If SMTP is missing or sending fails, this returns a status.
+    The pipeline keeps running.
+    """
     if not notifications:
         return {
             "enabled": False,

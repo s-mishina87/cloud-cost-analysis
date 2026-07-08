@@ -16,7 +16,6 @@ from src.paths import DB_PATH
 from src.storage import debug_sqlite, persist_pipeline_data
 
 
-DB_PATH = Path("data") / "cloud_costs.db"
 WINDOW_SIZE = 7
 DEVIATION_FACTOR = 1.5
 CHANGE_FACTOR = 2.0
@@ -52,8 +51,8 @@ def _print_sqlite_debug(db_path: Path) -> None:
 
 
 def main() -> None:
-    """Run the corrected local prototype end-to-end with clear step output."""
-    # Step 1 starts here: generate synthetic source data for the full pipeline.
+    """Run the local pipeline end-to-end with readable console output."""
+    # Synthetic data keeps this prototype self-contained and easy to demo.
     dataset = generate_structured_data(days=90, project_count=3, clusters_per_project=2, seed=42)
 
     print("\n[Step 1: Data generation]")
@@ -64,7 +63,7 @@ def main() -> None:
     _preview_rows(dataset["namespace_costs"], "Example NamespaceCost rows:")
     print("Target tables: Project, Cluster, Namespace, NamespaceCost")
 
-    # Step 2 starts here: distribute cluster overhead to namespace-level costs.
+    # Overhead is created in the generator and allocated here by usage share.
     allocated_costs = apply_overhead_allocation(dataset["namespace_costs"], dataset["cluster_overheads"])
 
     print("\n[Step 2: Allocation]")
@@ -73,7 +72,7 @@ def main() -> None:
     _preview_rows(allocated_costs, "Example allocated rows:")
     print("Updated fields: usage_cost, overhead_cost, total_cost")
 
-    # Step 3 starts here: detect anomalous namespace total costs over time.
+    # Namespace is the smallest analysis level in this project.
     anomalies = detect_anomalies(
         allocated_costs,
         window_size=WINDOW_SIZE,
@@ -86,7 +85,7 @@ def main() -> None:
     _preview_rows(anomalies, "Example anomaly rows:")
     print("Target table: Anomaly")
 
-    # Step 4 starts here: convert detected anomalies into notifications.
+    # Alerting just filters and formats anomaly results.
     notifications = generate_notifications(
         anomalies,
         notification_threshold=NOTIFICATION_THRESHOLD,
@@ -97,7 +96,7 @@ def main() -> None:
     _preview_rows(notifications, "Example notification rows:")
     print("Target table: Notification")
 
-    # Step 5 starts here: persist all entities into normalized SQLite tables.
+    # SQLite is enough for this local prototype.
     persisted = persist_pipeline_data(
         db_path=DB_PATH,
         projects=dataset["projects"],
@@ -113,7 +112,7 @@ def main() -> None:
     print(f"Persisted anomalies: {persisted['Anomaly']}")
     print(f"Persisted notifications: {persisted['Notification']}")
 
-    # Step 6 is optional: send internal notifications by email after persistence.
+    # Email is optional and does not block the pipeline.
     email_result = send_notifications_by_email(notifications)
     print("\n[Step 6: Optional email delivery]")
     print(f"message: {email_result['message']}")
@@ -133,5 +132,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    # Application entry point starts here.
     main()

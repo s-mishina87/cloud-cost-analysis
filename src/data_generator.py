@@ -1,8 +1,7 @@
-"""Structured synthetic data generator for the agreed v1 domain model.
+"""Generate synthetic cloud cost data for the local project pipeline.
 
-This module creates realistic local test data for:
-Project -> Cluster -> Namespace -> NamespaceCost inputs.
-Overhead is generated per cluster/day and distributed later by allocation logic.
+The module creates Project, Cluster, Namespace, NamespaceCost, and
+cluster_overheads records. Overhead is allocated later in allocation.py.
 """
 
 from __future__ import annotations
@@ -44,12 +43,12 @@ DEFAULT_START_DATE = date(2026, 1, 1)
 
 
 def _pick_cluster_names(rng: Random, count: int) -> list[str]:
-    """Pick unique cluster names from the agreed name pool."""
+    """Pick unique cluster names from the local name pool."""
     return rng.sample(CLUSTER_NAME_POOL, k=count)
 
 
 def _pick_namespace_names(rng: Random, count: int) -> list[str]:
-    """Build namespace names and always include anomaly-critical namespaces."""
+    """Pick namespace names and always include anomaly scenario namespaces."""
     if count < len(ANOMALY_CRITICAL_NAMESPACES):
         raise ValueError(
             f"count must be >= {len(ANOMALY_CRITICAL_NAMESPACES)} to include all anomaly-critical namespaces"
@@ -76,7 +75,7 @@ def _validate_generation_inputs(
     min_namespaces: int,
     max_namespaces: int,
 ) -> None:
-    """Validate generator inputs and fail fast with beginner-friendly errors."""
+    """Validate generator inputs early."""
     if days <= 0:
         raise ValueError("days must be > 0")
     if project_count <= 0:
@@ -106,29 +105,19 @@ def _validate_generation_inputs(
 
 
 def _namespace_base_cost(namespace_name: str, namespace_type: str, rng: Random) -> float:
-    """Return a baseline cost that creates a realistic size hierarchy.
+    """Return a baseline cost per namespace type.
 
-    Tiers (why each exists):
-    - Large (payments, checkout): these namespaces handle high-value traffic and
-      should dominate cluster spend so that spikes are immediately visible.
-    - Medium-large (orders, catalog): important workloads but clearly below the
-      large tier, representing the next layer of spend.
-    - Stable-visible (monitoring): a system namespace that is always running and
-      noticeable, but not as costly as the main application workloads.
-    - Small system (logging, security, ingress, ci-runner): infrastructure
-      support services that add up in aggregate but are individually modest.
-    - Medium application (frontend, customer-api, search, …): regular application
-      namespaces that sit below the large tier.
+    Payments and checkout are intentionally larger so anomaly scenarios stand out.
     """
     if namespace_name in {"payments", "checkout"}:
-        return rng.uniform(150.0, 200.0)  # large tier
+        return rng.uniform(150.0, 200.0)
     if namespace_name in {"orders", "catalog"}:
-        return rng.uniform(80.0, 120.0)   # medium-large tier
+        return rng.uniform(80.0, 120.0)
     if namespace_name == "monitoring":
-        return rng.uniform(50.0, 70.0)    # stable, noticeable system namespace
+        return rng.uniform(50.0, 70.0)
     if namespace_type == "system":
-        return rng.uniform(12.0, 25.0)    # small system support namespaces
-    return rng.uniform(35.0, 60.0)        # medium application namespaces
+        return rng.uniform(12.0, 25.0)
+    return rng.uniform(35.0, 60.0)
 
 
 def _usage_for_day(
@@ -139,45 +128,25 @@ def _usage_for_day(
     rng: Random,
     day_of_week: int,
 ) -> float:
-    """Generate daily usage cost with realistic variance, weekday/weekend pattern,
-    and intentional anomaly scenarios.
-
-    Stability tiers (why each exists):
-    - System namespaces and monitoring use low variance (±6 %) because
-      infrastructure runs continuously and costs are predictable.
-    - orders and catalog use moderate variance (±12 %) — steady workloads
-      but with meaningful day-to-day fluctuation.
-    - payments and checkout use higher variance (±20 %) — transaction
-      volumes are inherently more volatile, and spikes must stand out.
-    - All other application namespaces use ±18 % as a mid-range default.
-
-    Weekday / weekend pattern (why it exists):
-    - Application namespaces drop to 60-75 % of weekday cost on weekends
-      because user-facing traffic falls sharply on Saturdays and Sundays.
-    - System namespaces only drop to 88-96 % because infrastructure
-      (monitoring, logging, ingress…) stays largely on regardless of day.
-
-    # TODO: add mild summer seasonality once invoice time-series data is
-    # large enough to confirm the hypothesis.
-    """
-    # Daily noise by stability tier
+    """Generate daily usage with normal variation and planned anomaly scenarios."""
+    # System namespaces are usually more stable than app namespaces.
     if namespace_name == "monitoring" or namespace_type == "system":
         variation = rng.uniform(-0.06, 0.06)
     elif namespace_name in {"payments", "checkout", "search"}:
-        variation = rng.uniform(-0.20, 0.20)  # volatile – spikes must pop
+        variation = rng.uniform(-0.20, 0.20)
     elif namespace_name in {"orders", "catalog"}:
-        variation = rng.uniform(-0.12, 0.12)  # stable application workloads
+        variation = rng.uniform(-0.12, 0.12)
     else:
-        variation = rng.uniform(-0.18, 0.18)  # medium application default
+        variation = rng.uniform(-0.18, 0.18)
 
     value = base_cost * (1 + variation)
 
-    # Weekday / weekend multiplier (Saturday=5, Sunday=6 in Python's weekday())
+    # Weekend traffic is lower, especially for application namespaces.
     if day_of_week >= 5:
         if namespace_type == "system":
-            value *= rng.uniform(0.88, 0.96)  # infrastructure stays mostly on
+            value *= rng.uniform(0.88, 0.96)
         else:
-            value *= rng.uniform(0.60, 0.75)  # application traffic drops on weekends
+            value *= rng.uniform(0.60, 0.75)
 
     # Intentional scenario 1: sharp spike for payments.
     if namespace_name == "payments" and day_index in {55, 56, 57}:
@@ -203,11 +172,9 @@ def generate_structured_data(
     seed: int = 42,
     start_date: date | None = None,
 ) -> dict[str, list[dict]]:
-    """Generate v1 entities and daily NamespaceCost inputs for the full pipeline.
+    """Generate local pipeline input data.
 
-    By default, generation starts from a fixed calendar date to keep datasets
-    fully reproducible across different execution days. Pass ``start_date`` to
-    anchor output to another date while keeping deterministic values.
+    A fixed seed and start date make demos and tests reproducible.
     """
     _validate_generation_inputs(
         days=days,
@@ -217,6 +184,7 @@ def generate_structured_data(
         max_namespaces=max_namespaces,
     )
 
+    # Keep generation deterministic so tests and demos get same data.
     rng = Random(seed)
     effective_start_date = start_date or DEFAULT_START_DATE
 

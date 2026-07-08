@@ -1,7 +1,6 @@
-"""Internal notification generation for detected anomalies.
+"""Create notification records from detected anomalies.
 
-Notifications remain local text records for v1, matching the project scope
-without external integrations like email or Slack.
+This module only prepares notification data. Delivery is handled separately.
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ def generate_notifications(
     notification_threshold: float = 200.0,
 ) -> list[dict]:
     """Create local notifications for materially important anomalies."""
-    # anomaly detection finds suspicious cases; alerting decides if they matter enough to notify.
+    # Detection finds unusual costs; alerting decides which ones to notify.
     if not anomalies:
         return []
     if notification_threshold < 0:
@@ -44,7 +43,7 @@ def generate_notifications(
         baseline = float(anomaly.get("baseline_value", 0.0) or 0.0)
         threshold = float(anomaly.get("threshold_value", 0.0) or 0.0)
 
-        # Only materially relevant anomalies become notifications.
+        # Only relevant anomalies become notifications.
         absolute_difference = actual - baseline
         if absolute_difference <= notification_threshold:
             continue

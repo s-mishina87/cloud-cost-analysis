@@ -1,7 +1,4 @@
-"""
-This module persists pipeline data into normalized tables:
-Project, Cluster, Namespace, NamespaceCost, Anomaly, Notification.
-"""
+"""Store pipeline results in local SQLite tables."""
 
 from __future__ import annotations
 
@@ -32,7 +29,7 @@ def _change_type(anomaly: dict) -> str | None:
 
 
 def initialize_database(db_path: Path) -> None:
-    """Create the SQLite schema for the agreed v1 model."""
+    """Create the SQLite schema used by this project."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     with sqlite3.connect(db_path) as connection:
@@ -105,7 +102,7 @@ def initialize_database(db_path: Path) -> None:
 
 
 def reset_database(db_path: Path) -> None:
-    """Drop all user tables to guarantee a clean schema per pipeline run."""
+    """Drop user tables so each pipeline run starts clean."""
     if not db_path.exists():
         return
 
@@ -136,7 +133,7 @@ def persist_pipeline_data(
     anomalies: list[dict],
     notifications: list[dict],
 ) -> dict[str, int]:
-    """Persist generated and processed data into normalized SQLite tables."""
+    """Persist generated and processed data into SQLite."""
     reset_database(db_path)
     initialize_database(db_path)
 

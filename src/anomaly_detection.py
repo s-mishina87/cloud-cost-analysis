@@ -1,8 +1,7 @@
-"""Anomaly detection using the confirmed v1 method.
+"""Detect namespace cost anomalies with a moving-average baseline.
 
-Current method: moving average baseline with multiplicative threshold.
-Change-rate metadata is added on top so anomalies also show how quickly
-costs moved from one day to the next.
+The method uses a 7-day history by default and checks if current cost is
+above baseline * threshold factor.
 """
 
 from __future__ import annotations
@@ -46,7 +45,7 @@ def detect_anomalies(
     deviation_factor: float = 1.5,
     change_factor: float = 2.0,
 ) -> list[dict]:
-    """Detect anomalies using a moving average plus change-rate metadata."""
+    """Detect anomalies and add change metadata for later interpretation."""
     if not records:
         return []
     if window_size <= 0:
@@ -61,7 +60,7 @@ def detect_anomalies(
 
     anomalies: list[dict] = []
 
-    # Evaluate each namespace as an independent daily time series.
+    # Namespace is the smallest analysis unit, so each one is checked separately.
     for _, namespace_rows in grouped.items():
         sorted_rows = sorted(namespace_rows, key=lambda item: item["cost_date"])
 
@@ -94,13 +93,11 @@ def detect_anomalies(
                     "threshold_value": round(threshold, 2),
                     "severity": severity_from_ratio(actual_value, threshold),
                     "is_anomaly": 1,
-                    # daily_change = current cost - previous day's cost.
                     "daily_change": round(daily_change, 2),
-                    # average_absolute_change = normal recent change size.
                     "average_absolute_change": round(average_absolute_change, 2),
                     "change_threshold": round(change_threshold, 2),
                     "is_fast_change": is_fast_change,
-                    # Kept for beginner visibility and test readability.
+                    # Kept so dashboard and tests can read these values directly.
                     "moving_average": round(moving_average, 2),
                     "threshold": round(threshold, 2),
                 }

@@ -25,7 +25,7 @@ def apply_overhead_allocation(namespace_costs: list[dict], cluster_overheads: li
     for key, rows in grouped.items():
         sanitized_rows: list[dict] = []
 
-        # Apply edge-case rules before allocation: missing -> 0, negative -> skip.
+        # Handle edge cases before allocation: missing -> 0, negative -> skip.
         for row in rows:
             usage_cost = float(row.get("usage_cost", 0.0) or 0.0)
             if usage_cost < 0:
