@@ -1,44 +1,18 @@
 """Store pipeline results in SQLite tables."""
 
-from __future__ import annotations
-
 import sqlite3
 from pathlib import Path
-
-
-def _bool_to_sqlite(value: object) -> int | None:
-    """Convert True, False or None to 1, 0, or NULL for SQLite."""
-    if value is None:
-        return None
-    return 1 if bool(value) else 0
-
-
-def _change_type(anomaly: dict) -> str | None:
-    """Return the change type to save in the database."""
-    daily_change = anomaly.get("daily_change")
-    if daily_change is None:
-        return None
-
-    if float(daily_change) == 0:
-        return "NO_SIGNIFICANT_CHANGE"
-
-    if bool(anomaly.get("is_fast_change")):
-        return "FAST_CHANGE"
-
-    return "GRADUAL_CHANGE"
 
 
 def initialize_database(db_path: Path) -> None:
     """Create the SQLite tables used in this project."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with sqlite3.connect(db_path) as connection:
-        connection.execute("PRAGMA foreign_keys = ON")
-        cursor = connection.cursor()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        cur = conn.cursor()
 
-        # SQLite uses SQL commands to create tables, so the schema is kept
-        # here as one SQL script.
-        cursor.executescript(
+        cur.executescript(
             """
             CREATE TABLE IF NOT EXISTS Project (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +51,7 @@ def initialize_database(db_path: Path) -> None:
                 anomaly_date TEXT NOT NULL,
                 method TEXT NOT NULL,
                 actual_value REAL NOT NULL,
-                baseline_value REAL,
+                moving_average REAL,
                 threshold_value REAL NOT NULL,
                 severity TEXT NOT NULL,
                 is_anomaly INTEGER NOT NULL,
@@ -100,120 +74,122 @@ def initialize_database(db_path: Path) -> None:
             );
             """
         )
-        connection.commit()
+        conn.commit()
 
 
 def reset_database(db_path: Path) -> None:
-    """Drop existing tables so each pipeline run starts clean."""
+    """Clear existing data so each pipeline run starts clean."""
     if not db_path.exists():
         return
 
-    with sqlite3.connect(db_path) as connection:
-        connection.execute("PRAGMA foreign_keys = OFF")
-        cursor = connection.cursor()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        cur = conn.cursor()
 
-        table_rows = cursor.execute(
+        table_rows = cur.execute(
             """
             SELECT name
             FROM sqlite_master
             WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
             """
         ).fetchall()
+        tables = {row[0] for row in table_rows}
 
-        for (table_name,) in table_rows:
-            cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+        for table_name in ["Notification", "Anomaly", "NamespaceCost", "Namespace", "Cluster", "Project"]:
+            if table_name in tables:
+                cur.execute(f"DELETE FROM {table_name}")
 
-        connection.commit()
+        conn.commit()
 
 
 def persist_pipeline_data(
     db_path: Path,
-    projects: list[dict],
-    clusters: list[dict],
-    namespaces: list[dict],
-    namespace_costs: list[dict],
-    anomalies: list[dict],
-    notifications: list[dict],
-) -> dict[str, int]:
+    projects,
+    clusters,
+    namespaces,
+    namespace_costs,
+    anomalies,
+    notifications,
+):
     """Save generated and processed data to SQLite."""
     reset_database(db_path)
     initialize_database(db_path)
 
-    with sqlite3.connect(db_path) as connection:
-        connection.execute("PRAGMA foreign_keys = ON")
-        cursor = connection.cursor()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        cur = conn.cursor()
 
-        project_ids: dict[str, int] = {}
+        proj_ids = {}
         for project in projects:
-            cursor.execute(
+            cur.execute(
                 "INSERT INTO Project (project_name) VALUES (?)",
                 (project["project_name"],),
             )
-            project_ids[project["project_name"]] = cursor.lastrowid
+            proj_ids[project["project_name"]] = cur.lastrowid
 
-        cluster_ids: dict[tuple[str, str], int] = {}
+        cl_ids = {}
         for cluster in clusters:
-            project_id = project_ids[cluster["project_name"]]
-            cursor.execute(
+            proj_id = proj_ids[cluster["project_name"]]
+            cur.execute(
                 "INSERT INTO Cluster (cluster_name, project_id) VALUES (?, ?)",
-                (cluster["cluster_name"], project_id),
+                (cluster["cluster_name"], proj_id),
             )
-            cluster_key = (cluster["project_name"], cluster["cluster_name"])
-            cluster_ids[cluster_key] = cursor.lastrowid
+            cl_key = (cluster["project_name"], cluster["cluster_name"])
+            cl_ids[cl_key] = cur.lastrowid
 
-        namespace_ids: dict[tuple[str, str, str], int] = {}
+        ns_ids = {}
         for namespace in namespaces:
-            cluster_key = (namespace["project_name"], namespace["cluster_name"])
-            cluster_id = cluster_ids[cluster_key]
-            cursor.execute(
+            cl_key = (namespace["project_name"], namespace["cluster_name"])
+            cl_id = cl_ids[cl_key]
+            cur.execute(
                 "INSERT INTO Namespace (namespace_name, cluster_id) VALUES (?, ?)",
-                (namespace["namespace_name"], cluster_id),
+                (namespace["namespace_name"], cl_id),
             )
-            namespace_key = (
+            ns_key = (
                 namespace["project_name"],
                 namespace["cluster_name"],
                 namespace["namespace_name"],
             )
-            namespace_ids[namespace_key] = cursor.lastrowid
+            ns_ids[ns_key] = cur.lastrowid
 
-        namespace_cost_ids: dict[tuple[str, str, str, str], int] = {}
+        cost_ids = {}
         for row in namespace_costs:
-            namespace_key = (row["project_name"], row["cluster_name"], row["namespace_name"])
-            namespace_id = namespace_ids[namespace_key]
-            cursor.execute(
+            ns_key = (row["project_name"], row["cluster_name"], row["namespace_name"])
+            ns_id = ns_ids[ns_key]
+            cur.execute(
                 """
                 INSERT INTO NamespaceCost (cost_date, namespace_id, usage_cost, overhead_cost, total_cost)
                 VALUES (?, ?, ?, ?, ?)
                 """,
                 (
                     row["cost_date"],
-                    namespace_id,
+                    ns_id,
                     float(row["usage_cost"]),
                     float(row["overhead_cost"]),
                     float(row["total_cost"]),
                 ),
             )
             key = (row["cost_date"], row["project_name"], row["cluster_name"], row["namespace_name"])
-            namespace_cost_ids[key] = cursor.lastrowid
+            cost_ids[key] = cur.lastrowid
 
-        anomaly_ids: list[int] = []
-        anomaly_ids_by_ref_key: dict[str, int] = {}
+        anom_ids = []
+        anom_by_ref = {}
         for anomaly in anomalies:
-            namespace_cost_key = (
+            cost_key = (
                 anomaly["cost_date"],
                 anomaly["project_name"],
                 anomaly["cluster_name"],
                 anomaly["namespace_name"],
             )
-            namespace_cost_id = namespace_cost_ids[namespace_cost_key]
-            cursor.execute(
+            cost_id = cost_ids[cost_key]
+            cur.execute(
                 """
                 INSERT INTO Anomaly (
                     namespace_cost_id,
                     anomaly_date,
                     method,
                     actual_value,
-                    baseline_value,
+                    moving_average,
                     threshold_value,
                     severity,
                     is_anomaly,
@@ -226,47 +202,47 @@ def persist_pipeline_data(
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    namespace_cost_id,
+                    cost_id,
                     anomaly["cost_date"],
                     anomaly["method"],
                     float(anomaly["actual_value"]),
-                    float(anomaly["baseline_value"]),
+                    float(anomaly["moving_average"]),
                     float(anomaly["threshold_value"]),
                     anomaly["severity"],
                     int(anomaly["is_anomaly"]),
                     anomaly.get("daily_change"),
                     anomaly.get("average_absolute_change"),
                     anomaly.get("change_threshold"),
-                    _bool_to_sqlite(anomaly.get("is_fast_change")),
-                    _change_type(anomaly),
+                    None if anomaly.get("is_fast_change") is None else int(bool(anomaly.get("is_fast_change"))),
+                    anomaly.get("change_type"),
                 ),
             )
-            anomaly_id = cursor.lastrowid
-            anomaly_ids.append(anomaly_id)
+            anom_id = cur.lastrowid
+            anom_ids.append(anom_id)
 
             ref_key = anomaly.get("anomaly_ref_key")
             if ref_key:
-                anomaly_ids_by_ref_key[str(ref_key)] = anomaly_id
+                anom_by_ref[str(ref_key)] = anom_id
 
         for index, notification in enumerate(notifications):
-            anomaly_id: int | None = None
+            anom_id = None
             ref_key = notification.get("anomaly_ref_key")
             if ref_key is not None:
-                anomaly_id = anomaly_ids_by_ref_key.get(str(ref_key))
+                anom_id = anom_by_ref.get(str(ref_key))
 
-            if anomaly_id is None and index < len(anomaly_ids):
-                anomaly_id = anomaly_ids[index]
+            if anom_id is None and index < len(anom_ids):
+                anom_id = anom_ids[index]
 
-            if anomaly_id is None:
+            if anom_id is None:
                 continue
 
-            cursor.execute(
+            cur.execute(
                 """
                 INSERT INTO Notification (anomaly_id, notification_date, severity, status, message)
                 VALUES (?, ?, ?, ?, ?)
                 """,
                 (
-                    anomaly_id,
+                    anom_id,
                     notification["notification_date"],
                     notification["severity"],
                     notification["status"],
@@ -274,7 +250,7 @@ def persist_pipeline_data(
                 ),
             )
 
-        connection.commit()
+        conn.commit()
 
     return {
         "Project": len(projects),
@@ -286,15 +262,15 @@ def persist_pipeline_data(
     }
 
 
-def debug_sqlite(db_path: Path) -> list[dict]:
+def debug_sqlite(db_path: Path):
     """Return table names, row counts, and a small sample for debugging."""
     if not db_path.exists():
         return []
 
-    summary: list[dict] = []
-    with sqlite3.connect(db_path) as connection:
-        cursor = connection.cursor()
-        table_rows = cursor.execute(
+    summary = []
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.cursor()
+        tables = cur.execute(
             """
             SELECT name
             FROM sqlite_master
@@ -303,9 +279,9 @@ def debug_sqlite(db_path: Path) -> list[dict]:
             """
         ).fetchall()
 
-        for (table_name,) in table_rows:
-            row_count = cursor.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
-            sample = cursor.execute(f"SELECT * FROM {table_name} LIMIT 5").fetchall()
-            summary.append({"table": table_name, "row_count": row_count, "sample": sample})
+        for (table_name,) in tables:
+            n_rows = cur.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+            sample = cur.execute(f"SELECT * FROM {table_name} LIMIT 5").fetchall()
+            summary.append({"table": table_name, "row_count": n_rows, "sample": sample})
 
     return summary

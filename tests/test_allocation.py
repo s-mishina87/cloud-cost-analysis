@@ -1,7 +1,7 @@
 from src.allocation import apply_overhead_allocation
 
 
-def test_apply_overhead_allocation_distributes_proportionally() -> None:
+def test_apply_overhead_allocation_distributes_proportionally():
     namespace_costs = [
         {
             "cost_date": "2026-01-01",
@@ -40,7 +40,7 @@ def test_apply_overhead_allocation_distributes_proportionally() -> None:
     assert by_namespace["checkout"]["total_cost"] == 30.0
 
 
-def test_apply_overhead_allocation_zero_usage_sets_zero_overhead() -> None:
+def test_apply_overhead_allocation_zero_usage_sets_zero_overhead():
     namespace_costs = [
         {
             "cost_date": "2026-01-01",

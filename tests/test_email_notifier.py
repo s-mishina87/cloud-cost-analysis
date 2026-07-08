@@ -1,7 +1,7 @@
 from src.email_notifier import _build_summary_body, send_notifications_by_email
 
 
-def _notification(ref: str = "a-1", severity: str = "MEDIUM") -> dict:
+def _notification(ref: str = "a-1", severity: str = "MEDIUM"):
     return {
         "anomaly_ref_key": ref,
         "notification_date": "2026-01-10T12:00:00+00:00",
@@ -14,7 +14,7 @@ def _notification(ref: str = "a-1", severity: str = "MEDIUM") -> dict:
     }
 
 
-def _set_valid_smtp_env(monkeypatch) -> None:
+def _set_valid_smtp_env(monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
     monkeypatch.setenv("SMTP_PORT", "465")
     monkeypatch.setenv("SMTP_USERNAME", "alerts@example.com")
@@ -26,7 +26,7 @@ def _set_valid_smtp_env(monkeypatch) -> None:
     )
 
 
-def _clear_smtp_env(monkeypatch) -> None:
+def _clear_smtp_env(monkeypatch):
     for key in [
         "SMTP_HOST",
         "SMTP_PORT",
@@ -38,7 +38,7 @@ def _clear_smtp_env(monkeypatch) -> None:
         monkeypatch.delenv(key, raising=False)
 
 
-def test_empty_notification_list_returns_empty_result(monkeypatch) -> None:
+def test_empty_notification_list_returns_empty_result(monkeypatch):
     _set_valid_smtp_env(monkeypatch)
 
     summary = send_notifications_by_email([])
@@ -50,7 +50,7 @@ def test_empty_notification_list_returns_empty_result(monkeypatch) -> None:
     assert "No notifications" in summary["message"]
 
 
-def test_missing_smtp_configuration_disables_delivery(monkeypatch, tmp_path) -> None:
+def test_missing_smtp_configuration_disables_delivery(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SMTP_USERNAME", raising=False)
     monkeypatch.delenv("SMTP_PASSWORD", raising=False)
@@ -65,7 +65,7 @@ def test_missing_smtp_configuration_disables_delivery(monkeypatch, tmp_path) -> 
     assert "not configured" in summary["message"]
 
 
-def test_successful_send_with_mocked_smtp(monkeypatch) -> None:
+def test_successful_send_with_mocked_smtp(monkeypatch):
     _set_valid_smtp_env(monkeypatch)
 
     captured = {"logged_in": None, "message": None}
@@ -81,10 +81,10 @@ def test_successful_send_with_mocked_smtp(monkeypatch) -> None:
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def login(self, username: str, password: str) -> None:
+        def login(self, username: str, password: str):
             captured["logged_in"] = (username, password)
 
-        def send_message(self, message) -> None:
+        def send_message(self, message):
             captured["message"] = message
 
     monkeypatch.setattr("src.email_notifier.smtplib.SMTP_SSL", DummySMTP)
@@ -99,7 +99,7 @@ def test_successful_send_with_mocked_smtp(monkeypatch) -> None:
     assert captured["message"]["Subject"] == "Cloud Cost Alerts"
 
 
-def test_explicit_smtp_from_is_used(monkeypatch) -> None:
+def test_explicit_smtp_from_is_used(monkeypatch):
     _set_valid_smtp_env(monkeypatch)
     monkeypatch.setenv("SMTP_FROM", "alerts-from@example.com")
 
@@ -116,10 +116,10 @@ def test_explicit_smtp_from_is_used(monkeypatch) -> None:
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def login(self, username: str, password: str) -> None:
+        def login(self, username, password):
             return None
 
-        def send_message(self, message) -> None:
+        def send_message(self, message):
             captured["from"] = message["From"]
 
     monkeypatch.setattr("src.email_notifier.smtplib.SMTP_SSL", DummySMTP)
@@ -130,7 +130,7 @@ def test_explicit_smtp_from_is_used(monkeypatch) -> None:
     assert captured["from"] == "alerts-from@example.com"
 
 
-def test_missing_smtp_from_falls_back_to_smtp_username(monkeypatch, tmp_path) -> None:
+def test_missing_smtp_from_falls_back_to_smtp_username(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     _set_valid_smtp_env(monkeypatch)
     monkeypatch.delenv("SMTP_FROM", raising=False)
@@ -148,10 +148,10 @@ def test_missing_smtp_from_falls_back_to_smtp_username(monkeypatch, tmp_path) ->
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def login(self, username: str, password: str) -> None:
+        def login(self, username, password):
             return None
 
-        def send_message(self, message) -> None:
+        def send_message(self, message):
             captured["from"] = message["From"]
 
     monkeypatch.setattr("src.email_notifier.smtplib.SMTP_SSL", DummySMTP)
@@ -162,7 +162,7 @@ def test_missing_smtp_from_falls_back_to_smtp_username(monkeypatch, tmp_path) ->
     assert captured["from"] == "alerts@example.com"
 
 
-def test_multiple_notifications_are_in_one_email_body(monkeypatch) -> None:
+def test_multiple_notifications_are_in_one_email_body(monkeypatch):
     _set_valid_smtp_env(monkeypatch)
 
     captured = {"body": ""}
@@ -178,10 +178,10 @@ def test_multiple_notifications_are_in_one_email_body(monkeypatch) -> None:
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def login(self, username: str, password: str) -> None:
+        def login(self, username, password):
             return None
 
-        def send_message(self, message) -> None:
+        def send_message(self, message):
             captured["body"] = message.get_content()
 
     monkeypatch.setattr("src.email_notifier.smtplib.SMTP_SSL", DummySMTP)
@@ -196,7 +196,7 @@ def test_multiple_notifications_are_in_one_email_body(monkeypatch) -> None:
     assert "HIGH" in captured["body"]
 
 
-def test_build_summary_body_includes_change_metadata() -> None:
+def test_build_summary_body_includes_change_metadata():
     body = _build_summary_body(
         [
             {
@@ -221,7 +221,7 @@ def test_build_summary_body_includes_change_metadata() -> None:
     assert "Fast change: True" in body
 
 
-def test_multiple_recipients_are_parsed_correctly(monkeypatch) -> None:
+def test_multiple_recipients_are_parsed_correctly(monkeypatch):
     _set_valid_smtp_env(monkeypatch)
     monkeypatch.setenv(
         "SMTP_TO",
@@ -241,10 +241,10 @@ def test_multiple_recipients_are_parsed_correctly(monkeypatch) -> None:
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def login(self, username: str, password: str) -> None:
+        def login(self, username, password):
             return None
 
-        def send_message(self, message) -> None:
+        def send_message(self, message):
             captured["to"] = message["To"]
 
     monkeypatch.setattr("src.email_notifier.smtplib.SMTP_SSL", DummySMTP)
@@ -258,7 +258,7 @@ def test_multiple_recipients_are_parsed_correctly(monkeypatch) -> None:
     assert captured["to"] == "christina.seidl@stud.hcw.ac.at, svetlana.mishina@stud.hcw.ac.at"
 
 
-def test_smtp_failure_is_handled_gracefully(monkeypatch) -> None:
+def test_smtp_failure_is_handled_gracefully(monkeypatch):
     _set_valid_smtp_env(monkeypatch)
 
     class FailingSMTP:
@@ -272,10 +272,10 @@ def test_smtp_failure_is_handled_gracefully(monkeypatch) -> None:
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def login(self, username: str, password: str) -> None:
+        def login(self, username, password):
             return None
 
-        def send_message(self, message) -> None:
+        def send_message(self, message):
             raise RuntimeError("SMTP send failed")
 
     monkeypatch.setattr("src.email_notifier.smtplib.SMTP_SSL", FailingSMTP)
@@ -289,7 +289,7 @@ def test_smtp_failure_is_handled_gracefully(monkeypatch) -> None:
     assert "failed" in summary["message"].lower()
 
 
-def test_result_summary_shape(monkeypatch) -> None:
+def test_result_summary_shape(monkeypatch):
     _set_valid_smtp_env(monkeypatch)
 
     class DummySMTP:
@@ -303,10 +303,10 @@ def test_result_summary_shape(monkeypatch) -> None:
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def login(self, username: str, password: str) -> None:
+        def login(self, username, password):
             return None
 
-        def send_message(self, message) -> None:
+        def send_message(self, message):
             return None
 
     monkeypatch.setattr("src.email_notifier.smtplib.SMTP_SSL", DummySMTP)
@@ -316,7 +316,7 @@ def test_result_summary_shape(monkeypatch) -> None:
     assert {"enabled", "total", "sent", "failed", "recipients", "message"}.issubset(summary)
 
 
-def test_reads_smtp_values_from_dotenv_when_os_env_is_missing(monkeypatch, tmp_path) -> None:
+def test_reads_smtp_values_from_dotenv_when_os_env_is_missing(monkeypatch, tmp_path):
     _clear_smtp_env(monkeypatch)
 
     dotenv_path = tmp_path / ".env"
@@ -349,10 +349,10 @@ def test_reads_smtp_values_from_dotenv_when_os_env_is_missing(monkeypatch, tmp_p
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def login(self, username: str, password: str) -> None:
+        def login(self, username, password):
             captured["logged_in"] = (username, password)
 
-        def send_message(self, message) -> None:
+        def send_message(self, message):
             captured["from"] = message["From"]
             captured["to"] = message["To"]
 
@@ -367,7 +367,7 @@ def test_reads_smtp_values_from_dotenv_when_os_env_is_missing(monkeypatch, tmp_p
     assert captured["to"] == "first@example.com, second@example.com"
 
 
-def test_os_env_vars_take_priority_over_dotenv(monkeypatch, tmp_path) -> None:
+def test_os_env_vars_take_priority_over_dotenv(monkeypatch, tmp_path):
     _clear_smtp_env(monkeypatch)
 
     dotenv_path = tmp_path / ".env"
@@ -405,10 +405,10 @@ def test_os_env_vars_take_priority_over_dotenv(monkeypatch, tmp_path) -> None:
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def login(self, username: str, password: str) -> None:
+        def login(self, username, password):
             captured["logged_in"] = (username, password)
 
-        def send_message(self, message) -> None:
+        def send_message(self, message):
             captured["from"] = message["From"]
             captured["to"] = message["To"]
 

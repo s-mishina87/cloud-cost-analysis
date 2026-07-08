@@ -1,7 +1,9 @@
+import pytest
+
 from src.alerting import generate_notifications
 
 
-def test_generate_notifications_keeps_anomaly_reference_key() -> None:
+def test_generate_notifications_keeps_anomaly_reference_key():
     anomalies = [
         {
             "anomaly_ref_key": "2026-01-08|retail-prod|cluster-eu-west-1|payments|moving_average_threshold",
@@ -10,7 +12,7 @@ def test_generate_notifications_keeps_anomaly_reference_key() -> None:
             "cluster_name": "cluster-eu-west-1",
             "namespace_name": "payments",
             "actual_value": 160.0,
-            "baseline_value": 100.0,
+            "moving_average": 100.0,
             "threshold_value": 120.0,
             "is_anomaly": 1,
         }
@@ -23,7 +25,7 @@ def test_generate_notifications_keeps_anomaly_reference_key() -> None:
     assert "anomaly_id" not in notifications[0]
 
 
-def _anomaly(actual: float, baseline: float, threshold: float) -> dict:
+def _anomaly(actual: float, baseline: float, threshold: float):
     return {
         "anomaly_ref_key": "2026-01-08|retail-prod|cluster-eu-west-1|payments|moving_average_threshold",
         "cost_date": "2026-01-08",
@@ -31,26 +33,22 @@ def _anomaly(actual: float, baseline: float, threshold: float) -> dict:
         "cluster_name": "cluster-eu-west-1",
         "namespace_name": "payments",
         "actual_value": actual,
-        "baseline_value": baseline,
+        "moving_average": baseline,
         "threshold_value": threshold,
         "is_anomaly": 1,
     }
 
 
-def test_empty_anomaly_input_returns_empty_list() -> None:
+def test_empty_anomaly_input_returns_empty_list():
     assert generate_notifications([]) == []
 
 
-def test_negative_notification_threshold_raises_value_error() -> None:
-    try:
+def test_negative_notification_threshold_raises_value_error():
+    with pytest.raises(ValueError, match="notification_threshold must be >= 0"):
         generate_notifications([_anomaly(actual=301.0, baseline=100.0, threshold=120.0)], notification_threshold=-1.0)
-    except ValueError as exc:
-        assert "notification_threshold must be >= 0" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError for negative notification_threshold")
 
 
-def test_zero_notification_threshold_is_allowed() -> None:
+def test_zero_notification_threshold_is_allowed():
     notifications = generate_notifications(
         [_anomaly(actual=100.1, baseline=100.0, threshold=80.0)],
         notification_threshold=0.0,
@@ -59,7 +57,7 @@ def test_zero_notification_threshold_is_allowed() -> None:
     assert len(notifications) == 1
 
 
-def test_absolute_difference_at_or_below_default_threshold_skips_notification() -> None:
+def test_absolute_difference_at_or_below_default_threshold_skips_notification():
     anomalies = [_anomaly(actual=300.0, baseline=100.0, threshold=120.0)]
 
     notifications = generate_notifications(anomalies)
@@ -67,7 +65,7 @@ def test_absolute_difference_at_or_below_default_threshold_skips_notification() 
     assert notifications == []
 
 
-def test_absolute_difference_above_default_threshold_creates_notification() -> None:
+def test_absolute_difference_above_default_threshold_creates_notification():
     anomalies = [_anomaly(actual=301.0, baseline=100.0, threshold=120.0)]
 
     notifications = generate_notifications(anomalies)
@@ -75,7 +73,7 @@ def test_absolute_difference_above_default_threshold_creates_notification() -> N
     assert len(notifications) == 1
 
 
-def test_notification_threshold_is_configurable() -> None:
+def test_notification_threshold_is_configurable():
     anomalies = [_anomaly(actual=250.0, baseline=100.0, threshold=120.0)]
 
     notifications = generate_notifications(anomalies, notification_threshold=100.0)
@@ -83,7 +81,7 @@ def test_notification_threshold_is_configurable() -> None:
     assert len(notifications) == 1
 
 
-def test_severity_is_assigned_for_created_notifications() -> None:
+def test_severity_is_assigned_for_created_notifications():
     low = generate_notifications([_anomaly(actual=131.0, baseline=-100.0, threshold=120.0)])[0]
     medium = generate_notifications([_anomaly(actual=171.0, baseline=-100.0, threshold=120.0)])[0]
     high = generate_notifications([_anomaly(actual=250.0, baseline=-100.0, threshold=120.0)])[0]
@@ -93,7 +91,7 @@ def test_severity_is_assigned_for_created_notifications() -> None:
     assert high["severity"] == "HIGH"
 
 
-def test_notification_reuses_existing_anomaly_severity() -> None:
+def test_notification_reuses_existing_anomaly_severity():
     anomaly = _anomaly(actual=250.0, baseline=0.0, threshold=120.0)
     anomaly["severity"] = "MEDIUM"
 
@@ -102,7 +100,7 @@ def test_notification_reuses_existing_anomaly_severity() -> None:
     assert notification["severity"] == "MEDIUM"
 
 
-def test_notification_contains_required_fields() -> None:
+def test_notification_contains_required_fields():
     notifications = generate_notifications([_anomaly(actual=301.0, baseline=100.0, threshold=120.0)])
 
     assert len(notifications) == 1
@@ -118,7 +116,7 @@ def test_notification_contains_required_fields() -> None:
     assert isinstance(notification["notification_date"], str)
 
 
-def test_notification_includes_change_metadata_and_message_details() -> None:
+def test_notification_includes_change_metadata_and_message_details():
     anomalies = [
         {
             "anomaly_ref_key": "2026-01-08|retail-prod|cluster-eu-west-1|payments|moving_average_threshold",
@@ -127,13 +125,14 @@ def test_notification_includes_change_metadata_and_message_details() -> None:
             "cluster_name": "cluster-eu-west-1",
             "namespace_name": "payments",
             "actual_value": 301.0,
-            "baseline_value": 100.0,
+            "moving_average": 100.0,
             "threshold_value": 120.0,
             "is_anomaly": 1,
             "daily_change": 75.0,
             "average_absolute_change": 20.0,
             "change_threshold": 40.0,
             "is_fast_change": True,
+            "change_type": "FAST_CHANGE",
         }
     ]
 

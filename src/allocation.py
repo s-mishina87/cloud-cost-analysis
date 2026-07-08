@@ -1,50 +1,29 @@
-"""Split cluster overhead across NamespaceCost records.
-
-The overhead is split by usage share inside each cluster and day.
-"""
-
-from __future__ import annotations
+"""Split cluster overhead across NamespaceCost records."""
 
 
-def apply_overhead_allocation(namespace_costs: list[dict], cluster_overheads: list[dict]) -> list[dict]:
-    """Split cluster overhead across namespaces for each day."""
+def apply_overhead_allocation(namespace_costs, cluster_overheads):
+    """Split cluster overhead across namespaces by usage share per day."""
     overhead_map = {
-        (row["cost_date"], row["project_name"], row["cluster_name"]): float(row.get("cluster_overhead_cost", 0.0) or 0.0)
+        (row["cost_date"], row["project_name"], row["cluster_name"]): float(row.get("cluster_overhead_cost") or 0.0)
         for row in cluster_overheads
     }
 
-    grouped: dict[tuple[str, str, str], list[dict]] = {}
+    grouped = {}
     for row in namespace_costs:
         key = (row["cost_date"], row["project_name"], row["cluster_name"])
         grouped.setdefault(key, []).append(row)
 
-    allocated_rows: list[dict] = []
-
+    result = []
     for key, rows in grouped.items():
-        sanitized_rows: list[dict] = []
-
-        # Handle edge cases before allocation: missing -> 0, negative -> skip.
+        total_usage = sum(float(r["usage_cost"]) for r in rows)
+        overhead = overhead_map.get(key, 0.0)
         for row in rows:
-            usage_cost = float(row.get("usage_cost", 0.0) or 0.0)
-            if usage_cost < 0:
-                continue
+            usage = round(float(row["usage_cost"]), 2)
+            share = usage / total_usage if total_usage > 0 else 0.0
+            updated = dict(row)
+            updated["usage_cost"] = usage
+            updated["overhead_cost"] = round(overhead * share, 2)
+            updated["total_cost"] = round(usage + overhead * share, 2)
+            result.append(updated)
 
-            normalized = dict(row)
-            normalized["usage_cost"] = round(usage_cost, 2)
-            sanitized_rows.append(normalized)
-
-        total_cluster_usage = sum(item["usage_cost"] for item in sanitized_rows)
-        cluster_overhead_cost = max(0.0, overhead_map.get(key, 0.0))
-
-        for row in sanitized_rows:
-            if total_cluster_usage <= 0:
-                overhead_cost = 0.0
-            else:
-                usage_share = row["usage_cost"] / total_cluster_usage
-                overhead_cost = cluster_overhead_cost * usage_share
-
-            row["overhead_cost"] = round(overhead_cost, 2)
-            row["total_cost"] = round(row["usage_cost"] + row["overhead_cost"], 2)
-            allocated_rows.append(row)
-
-    return allocated_rows
+    return result

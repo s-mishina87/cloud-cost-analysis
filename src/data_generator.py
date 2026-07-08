@@ -4,8 +4,6 @@ It creates projects, clusters, namespaces, namespace costs, and cluster
 overhead. The overhead is allocated later in allocation.py.
 """
 
-from __future__ import annotations
-
 from datetime import date, timedelta
 from random import Random
 
@@ -42,24 +40,24 @@ ANOMALY_CRITICAL_NAMESPACES = ["payments", "checkout", "monitoring"]
 DEFAULT_START_DATE = date(2026, 1, 1)
 
 
-def _pick_cluster_names(rng: Random, count: int) -> list[str]:
+def _pick_cluster_names(rng: Random, count: int):
     """Pick unique cluster names from the name list."""
     return rng.sample(CLUSTER_NAME_POOL, k=count)
 
 
-def _pick_namespace_names(rng: Random, count: int) -> list[str]:
+def _pick_namespace_names(rng: Random, count: int):
     """Pick namespace names and always include the anomaly namespaces."""
     if count < len(ANOMALY_CRITICAL_NAMESPACES):
         raise ValueError(
             f"count must be >= {len(ANOMALY_CRITICAL_NAMESPACES)} to include all anomaly-critical namespaces"
         )
 
-    all_candidates = SYSTEM_NAMESPACES + APPLICATION_NAMESPACES
-    remaining_candidates = [name for name in all_candidates if name not in ANOMALY_CRITICAL_NAMESPACES]
-    extra_count = count - len(ANOMALY_CRITICAL_NAMESPACES)
-    selected_extra = rng.sample(remaining_candidates, k=extra_count)
+    all_ns = SYSTEM_NAMESPACES + APPLICATION_NAMESPACES
+    rest_ns = [name for name in all_ns if name not in ANOMALY_CRITICAL_NAMESPACES]
+    extra_n = count - len(ANOMALY_CRITICAL_NAMESPACES)
+    extra_ns = rng.sample(rest_ns, k=extra_n)
 
-    names = ANOMALY_CRITICAL_NAMESPACES + selected_extra
+    names = ANOMALY_CRITICAL_NAMESPACES + extra_ns
     rng.shuffle(names)
     return names
 
@@ -95,9 +93,9 @@ def _validate_generation_inputs(
     if min_namespaces > max_namespaces:
         raise ValueError("min_namespaces must be <= max_namespaces")
 
-    namespace_capacity = len(set(SYSTEM_NAMESPACES + APPLICATION_NAMESPACES))
-    if max_namespaces > namespace_capacity:
-        raise ValueError(f"max_namespaces must be <= {namespace_capacity}")
+    ns_cap = len(set(SYSTEM_NAMESPACES + APPLICATION_NAMESPACES))
+    if max_namespaces > ns_cap:
+        raise ValueError(f"max_namespaces must be <= {ns_cap}")
     if min_namespaces < len(ANOMALY_CRITICAL_NAMESPACES):
         raise ValueError(
             f"min_namespaces must be >= {len(ANOMALY_CRITICAL_NAMESPACES)} to include anomaly-critical namespaces"
@@ -129,7 +127,6 @@ def _usage_for_day(
     day_of_week: int,
 ) -> float:
     """Generate one daily usage value with normal variation and planned anomalies."""
-    # System namespaces are usually more stable than app namespaces.
     if namespace_name == "monitoring" or namespace_type == "system":
         variation = rng.uniform(-0.06, 0.06)
     elif namespace_name in {"payments", "checkout", "search"}:
@@ -141,22 +138,18 @@ def _usage_for_day(
 
     value = base_cost * (1 + variation)
 
-    # Weekend traffic is lower, especially for app namespaces.
     if day_of_week >= 5:
         if namespace_type == "system":
             value *= rng.uniform(0.88, 0.96)
         else:
             value *= rng.uniform(0.60, 0.75)
 
-    # Planned scenario 1: sharp spike for payments.
     if namespace_name == "payments" and day_index in {55, 56, 57}:
         value *= 3.0
 
-    # Planned scenario 2: gradual increase for monitoring.
     if namespace_name == "monitoring" and day_index >= 60:
         value += (day_index - 59) * 0.8
 
-    # Planned scenario 3: temporary jump for checkout.
     if namespace_name == "checkout" and 40 <= day_index <= 43:
         value += 45.0
 
@@ -171,7 +164,7 @@ def generate_structured_data(
     max_namespaces: int = 8,
     seed: int = 42,
     start_date: date | None = None,
-) -> dict[str, list[dict]]:
+):
     """Generate input data for the full pipeline.
 
     A fixed seed and start date help keep tests and demos consistent.
@@ -184,60 +177,59 @@ def generate_structured_data(
         max_namespaces=max_namespaces,
     )
 
-    # Keep generation deterministic so tests and demos get the same data.
     rng = Random(seed)
-    effective_start_date = start_date or DEFAULT_START_DATE
+    start = start_date or DEFAULT_START_DATE
 
-    project_names = PROJECT_NAME_POOL[:project_count]
-    projects: list[dict] = [{"project_name": project_name} for project_name in project_names]
+    proj_names = PROJECT_NAME_POOL[:project_count]
+    projects = [{"project_name": name} for name in proj_names]
 
-    clusters: list[dict] = []
-    namespaces: list[dict] = []
-    namespace_costs: list[dict] = []
-    cluster_overheads: list[dict] = []
+    clusters = []
+    namespaces = []
+    namespace_costs = []
+    cluster_overheads = []
 
-    for project_name in project_names:
-        selected_clusters = _pick_cluster_names(rng, clusters_per_project)
-        for cluster_name in selected_clusters:
+    for project_name in proj_names:
+        cl_names = _pick_cluster_names(rng, clusters_per_project)
+        for cluster_name in cl_names:
             clusters.append({"project_name": project_name, "cluster_name": cluster_name})
 
-            namespace_count = rng.randint(min_namespaces, max_namespaces)
-            selected_namespaces = _pick_namespace_names(rng, namespace_count)
-            namespace_meta: list[dict] = []
+            ns_count = rng.randint(min_namespaces, max_namespaces)
+            ns_names = _pick_namespace_names(rng, ns_count)
+            ns_meta = []
 
-            for namespace_name in selected_namespaces:
-                namespace_type = "system" if _is_system_namespace(namespace_name) else "application"
-                namespace_row = {
+            for namespace_name in ns_names:
+                ns_type = "system" if _is_system_namespace(namespace_name) else "application"
+                ns_row = {
                     "project_name": project_name,
                     "cluster_name": cluster_name,
                     "namespace_name": namespace_name,
-                    "namespace_type": namespace_type,
+                    "namespace_type": ns_type,
                 }
-                namespaces.append(namespace_row)
-                namespace_meta.append(
+                namespaces.append(ns_row)
+                ns_meta.append(
                     {
-                        **namespace_row,
-                        "base_cost": _namespace_base_cost(namespace_name, namespace_type, rng),
+                        **ns_row,
+                        "base_cost": _namespace_base_cost(namespace_name, ns_type, rng),
                     }
                 )
 
             for day_index in range(days):
-                current_date_obj = effective_start_date + timedelta(days=day_index)
-                current_date = current_date_obj.isoformat()
-                day_of_week = current_date_obj.weekday()  # 0=Monday, 6=Sunday
+                dt_obj = start + timedelta(days=day_index)
+                dt = dt_obj.isoformat()
+                dow = dt_obj.weekday()
 
-                day_rows: list[dict] = []
-                for meta in namespace_meta:
+                day_rows = []
+                for meta in ns_meta:
                     usage_cost = _usage_for_day(
                         namespace_name=meta["namespace_name"],
                         namespace_type=meta["namespace_type"],
                         day_index=day_index,
                         base_cost=meta["base_cost"],
                         rng=rng,
-                        day_of_week=day_of_week,
+                        day_of_week=dow,
                     )
                     row = {
-                        "cost_date": current_date,
+                        "cost_date": dt,
                         "project_name": meta["project_name"],
                         "cluster_name": meta["cluster_name"],
                         "namespace_name": meta["namespace_name"],
@@ -247,15 +239,15 @@ def generate_structured_data(
                     }
                     day_rows.append(row)
 
-                cluster_usage_total = sum(item["usage_cost"] for item in day_rows)
-                overhead_rate = rng.uniform(0.14, 0.28)
-                cluster_overhead_cost = round(cluster_usage_total * overhead_rate, 2)
+                usage_sum = sum(item["usage_cost"] for item in day_rows)
+                oh_rate = rng.uniform(0.14, 0.28)
+                oh_cost = round(usage_sum * oh_rate, 2)
                 cluster_overheads.append(
                     {
-                        "cost_date": current_date,
+                        "cost_date": dt,
                         "project_name": project_name,
                         "cluster_name": cluster_name,
-                        "cluster_overhead_cost": cluster_overhead_cost,
+                        "cluster_overhead_cost": oh_cost,
                     }
                 )
 

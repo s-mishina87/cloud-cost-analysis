@@ -3,17 +3,14 @@
 This module is separate from anomaly detection and notification creation.
 """
 
-from __future__ import annotations
-
 import os
 import smtplib
 import ssl
 from email.message import EmailMessage
 
 
-def _read_local_dotenv(path: str = ".env") -> dict[str, str]:
-    """Read simple KEY=VALUE pairs from a local .env file."""
-    values: dict[str, str] = {}
+def _read_local_dotenv(path: str = ".env"):
+    values = {}
 
     if not os.path.exists(path):
         return values
@@ -33,15 +30,14 @@ def _read_local_dotenv(path: str = ".env") -> dict[str, str]:
     return values
 
 
-def _read_email_config() -> tuple[bool, dict]:
-    """Read SMTP settings and check if required values exist."""
-    dotenv_values = _read_local_dotenv()
+def _read_email_config():
+    env_local = _read_local_dotenv()
 
     def _get_config_value(key: str, default: str = "") -> str:
-        os_value = os.getenv(key)
-        if os_value is not None and os_value.strip() != "":
-            return os_value.strip()
-        return dotenv_values.get(key, default).strip()
+        env_val = os.getenv(key)
+        if env_val is not None and env_val.strip() != "":
+            return env_val.strip()
+        return env_local.get(key, default).strip()
 
     host = _get_config_value("SMTP_HOST", "smtp.gmail.com")
     port_raw = _get_config_value("SMTP_PORT", "465")
@@ -50,16 +46,16 @@ def _read_email_config() -> tuple[bool, dict]:
     smtp_from = _get_config_value("SMTP_FROM")
     sender = smtp_from or username
 
-    recipients_raw = _get_config_value("SMTP_TO")
-    recipients = [item.strip() for item in recipients_raw.split(",") if item.strip()]
+    to_raw = _get_config_value("SMTP_TO")
+    recipients = [item.strip() for item in to_raw.split(",") if item.strip()]
 
     try:
         port = int(port_raw)
     except ValueError:
         return False, {"message": "Email delivery disabled: SMTP not configured (invalid SMTP_PORT)."}
 
-    required_missing = not username or not password or not sender or not recipients
-    if required_missing:
+    missing = not username or not password or not sender or not recipients
+    if missing:
         return False, {"message": "Email delivery disabled: SMTP not configured."}
 
     return True, {
@@ -72,8 +68,7 @@ def _read_email_config() -> tuple[bool, dict]:
     }
 
 
-def _build_summary_body(notifications: list[dict]) -> str:
-    """Build a simple plain text email body for all notifications."""
+def _build_summary_body(notifications):
     lines = ["Cloud cost alert summary", "", f"Total notifications: {len(notifications)}", ""]
 
     for index, notification in enumerate(notifications, start=1):
@@ -89,9 +84,9 @@ def _build_summary_body(notifications: list[dict]) -> str:
         if daily_change is not None:
             lines.append(f"   Daily change: {daily_change}")
 
-        average_absolute_change = notification.get("average_absolute_change")
-        if average_absolute_change is not None:
-            lines.append(f"   Average absolute change: {average_absolute_change}")
+        avg_change = notification.get("average_absolute_change")
+        if avg_change is not None:
+            lines.append(f"   Average absolute change: {avg_change}")
 
         change_threshold = notification.get("change_threshold")
         if change_threshold is not None:
@@ -106,7 +101,7 @@ def _build_summary_body(notifications: list[dict]) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
-def send_notifications_by_email(notifications: list[dict]) -> dict:
+def send_notifications_by_email(notifications):
     """Send one summary email for the generated notifications.
 
     If SMTP is missing or sending fails, this function returns a status.

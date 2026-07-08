@@ -1,73 +1,47 @@
-"""Create notifications from detected anomalies.
-
-This module only prepares notification data. It does not send anything.
-"""
-
-from __future__ import annotations
+"""Create notifications from detected anomalies."""
 
 from datetime import datetime, UTC
 
 from src.anomaly_detection import severity_from_ratio
 
 
-def _change_type(anomaly: dict) -> str | None:
-    """Return a change type when the anomaly does not have one yet."""
-    daily_change = anomaly.get("daily_change")
-    if daily_change is None:
-        return None
-
-    if float(daily_change) == 0:
-        return "NO_SIGNIFICANT_CHANGE"
-
-    if bool(anomaly.get("is_fast_change")):
-        return "FAST_CHANGE"
-
-    return "GRADUAL_CHANGE"
-
-
-def generate_notifications(
-    anomalies: list[dict],
-    notification_threshold: float = 200.0,
-) -> list[dict]:
-    """Create notifications for anomalies that are important enough.Detection finds unusual costs, alerting decides which ones to notify."""
+def generate_notifications(anomalies, notification_threshold: float = 200.0):
+    """Create notifications for anomalies that are important enough."""
     if not anomalies:
         return []
     if notification_threshold < 0:
         raise ValueError("notification_threshold must be >= 0")
 
-    notifications: list[dict] = []
-
+    notifications = []
     for anomaly in anomalies:
-        actual = float(anomaly.get("actual_value", 0.0) or 0.0)
-        baseline = float(anomaly.get("baseline_value", 0.0) or 0.0)
-        threshold = float(anomaly.get("threshold_value", 0.0) or 0.0)
+        actual = float(anomaly.get("actual_value") or 0.0)
+        mov_avg = float(anomaly.get("moving_average") or 0.0)
+        thr = float(anomaly.get("threshold_value") or 0.0)
 
-        absolute_difference = actual - baseline
-        if absolute_difference <= notification_threshold:
+        if actual - mov_avg <= notification_threshold:
             continue
 
-        severity = anomaly.get("severity") or severity_from_ratio(actual, threshold)
-        change_type = anomaly.get("change_type") or _change_type(anomaly)
+        sev = anomaly.get("severity") or severity_from_ratio(actual, thr)
+        chg_type = anomaly.get("change_type")
 
-        notification = {
+        notifications.append({
             "anomaly_ref_key": anomaly.get("anomaly_ref_key"),
             "notification_date": datetime.now(UTC).isoformat(),
-            "severity": severity,
+            "severity": sev,
             "status": "NEW",
             "daily_change": anomaly.get("daily_change"),
             "average_absolute_change": anomaly.get("average_absolute_change"),
             "change_threshold": anomaly.get("change_threshold"),
             "is_fast_change": anomaly.get("is_fast_change"),
-            "change_type": change_type,
+            "change_type": chg_type,
             "message": (
                 f"Cost anomaly in {anomaly['namespace_name']} ({anomaly['project_name']}/{anomaly['cluster_name']}) "
                 f"on {anomaly['cost_date']}: actual={round(actual, 2)}, "
-                f"baseline={round(baseline, 2)}, threshold={round(threshold, 2)}, "
+                f"moving_average={round(mov_avg, 2)}, threshold={round(thr, 2)}, "
                 f"daily_change={anomaly.get('daily_change')}, "
                 f"change_threshold={anomaly.get('change_threshold')}, "
-                f"change_type={change_type}"
+                f"change_type={chg_type}"
             ),
-        }
-        notifications.append(notification)
+        })
 
     return notifications

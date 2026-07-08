@@ -1,3 +1,4 @@
+import pytest
 from datetime import date, timedelta
 
 from src.data_generator import (
@@ -10,7 +11,7 @@ from src.data_generator import (
 )
 
 
-def test_generate_structured_data_returns_agreed_entities() -> None:
+def test_generate_structured_data_returns_agreed_entities():
     dataset = generate_structured_data(days=90, project_count=3, clusters_per_project=2, seed=7)
 
     assert {"projects", "clusters", "namespaces", "namespace_costs", "cluster_overheads"}.issubset(dataset)
@@ -31,21 +32,21 @@ def test_generate_structured_data_returns_agreed_entities() -> None:
     }.issubset(first_cost)
 
 
-def test_generator_creates_90_days_per_namespace() -> None:
+def test_generator_creates_90_days_per_namespace():
     dataset = generate_structured_data(days=90, project_count=3, clusters_per_project=2, seed=11)
 
     namespace_count = len(dataset["namespaces"])
     assert len(dataset["namespace_costs"]) == namespace_count * 90
 
 
-def test_generator_uses_fixed_default_start_date_for_reproducibility() -> None:
+def test_generator_uses_fixed_default_start_date_for_reproducibility():
     dataset = generate_structured_data(days=3, project_count=1, clusters_per_project=1, seed=5)
     dates = sorted({row["cost_date"] for row in dataset["namespace_costs"]})
 
     assert dates == ["2026-01-01", "2026-01-02", "2026-01-03"]
 
 
-def test_generator_accepts_explicit_start_date() -> None:
+def test_generator_accepts_explicit_start_date():
     dataset = generate_structured_data(
         days=2,
         project_count=1,
@@ -58,15 +59,15 @@ def test_generator_accepts_explicit_start_date() -> None:
     assert dates == ["2026-04-01", "2026-04-02"]
 
 
-def test_cluster_pool_does_not_overlap_namespace_pools() -> None:
+def test_cluster_pool_does_not_overlap_namespace_pools():
     namespace_names = set(SYSTEM_NAMESPACES) | set(APPLICATION_NAMESPACES)
     assert set(CLUSTER_NAME_POOL).isdisjoint(namespace_names)
 
 
-def test_anomaly_critical_namespaces_are_present_in_every_cluster() -> None:
+def test_anomaly_critical_namespaces_are_present_in_every_cluster():
     dataset = generate_structured_data(days=5, project_count=3, clusters_per_project=2, seed=17)
 
-    namespaces_by_cluster: dict[tuple[str, str], set[str]] = {}
+    namespaces_by_cluster = {}
     for row in dataset["namespaces"]:
         key = (row["project_name"], row["cluster_name"])
         namespaces_by_cluster.setdefault(key, set()).add(row["namespace_name"])
@@ -75,8 +76,8 @@ def test_anomaly_critical_namespaces_are_present_in_every_cluster() -> None:
         assert set(ANOMALY_CRITICAL_NAMESPACES).issubset(names)
 
 
-def test_generator_rejects_namespace_count_below_anomaly_requirements() -> None:
-    try:
+def test_generator_rejects_namespace_count_below_anomaly_requirements():
+    with pytest.raises(ValueError, match="min_namespaces must be >= 3"):
         generate_structured_data(
             days=3,
             project_count=1,
@@ -85,65 +86,29 @@ def test_generator_rejects_namespace_count_below_anomaly_requirements() -> None:
             max_namespaces=2,
             seed=17,
         )
-    except ValueError as exc:
-        assert "min_namespaces must be >= 3" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError when namespace count is below required anomaly namespaces")
 
 
-def test_generator_rejects_invalid_project_count() -> None:
-    try:
+def test_generator_rejects_invalid_project_count():
+    with pytest.raises(ValueError, match="project_count must be > 0"):
         generate_structured_data(project_count=0)
-    except ValueError as exc:
-        assert "project_count must be > 0" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError for non-positive project_count")
-
-    try:
+    with pytest.raises(ValueError, match="project_count must be <="):
         generate_structured_data(project_count=999)
-    except ValueError as exc:
-        assert "project_count must be <=" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError when project_count exceeds project pool")
 
 
-def test_generator_rejects_invalid_clusters_per_project() -> None:
-    try:
+def test_generator_rejects_invalid_clusters_per_project():
+    with pytest.raises(ValueError, match="clusters_per_project must be > 0"):
         generate_structured_data(clusters_per_project=0)
-    except ValueError as exc:
-        assert "clusters_per_project must be > 0" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError for non-positive clusters_per_project")
-
-    try:
+    with pytest.raises(ValueError, match="clusters_per_project must be <="):
         generate_structured_data(clusters_per_project=999)
-    except ValueError as exc:
-        assert "clusters_per_project must be <=" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError when clusters_per_project exceeds cluster pool")
 
 
-def test_generator_rejects_invalid_namespace_bounds() -> None:
-    try:
+def test_generator_rejects_invalid_namespace_bounds():
+    with pytest.raises(ValueError, match="min_namespaces must be > 0"):
         generate_structured_data(min_namespaces=0)
-    except ValueError as exc:
-        assert "min_namespaces must be > 0" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError for non-positive min_namespaces")
-
-    try:
+    with pytest.raises(ValueError, match="max_namespaces must be > 0"):
         generate_structured_data(max_namespaces=0)
-    except ValueError as exc:
-        assert "max_namespaces must be > 0" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError for non-positive max_namespaces")
-
-    try:
+    with pytest.raises(ValueError, match="min_namespaces must be <= max_namespaces"):
         generate_structured_data(min_namespaces=7, max_namespaces=5)
-    except ValueError as exc:
-        assert "min_namespaces must be <= max_namespaces" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError when min_namespaces is greater than max_namespaces")
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +116,7 @@ def test_generator_rejects_invalid_namespace_bounds() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _cv(costs: list[float]) -> float:
+def _cv(costs):
     """Coefficient of variation: std / mean. Lower means more stable."""
     n = len(costs)
     if n < 2:
@@ -163,15 +128,15 @@ def _cv(costs: list[float]) -> float:
     return variance ** 0.5 / mean
 
 
-def _avg_cost_by_namespace(dataset: dict) -> dict[str, float]:
+def _avg_cost_by_namespace(dataset):
     """Return mean usage_cost per namespace name across all projects, clusters and days."""
-    totals: dict[str, list[float]] = {}
+    totals = {}
     for row in dataset["namespace_costs"]:
         totals.setdefault(row["namespace_name"], []).append(row["usage_cost"])
     return {ns: sum(v) / len(v) for ns, v in totals.items()}
 
 
-def test_payments_and_checkout_are_among_larger_namespaces() -> None:
+def test_payments_and_checkout_are_among_larger_namespaces():
     """Payments and checkout should be clearly in the top tier by average cost.
 
     They are the anomaly-critical application namespaces and should dominate
@@ -186,7 +151,7 @@ def test_payments_and_checkout_are_among_larger_namespaces() -> None:
     assert "checkout" in top_names, f"checkout not in top-4 by avg cost; ranked: {sorted_ns}"
 
 
-def test_visible_size_hierarchy() -> None:
+def test_visible_size_hierarchy():
     """The top-2 namespaces by average cost should be at least 3x more expensive
     than the bottom-3, creating the few-large / many-small pattern.
     """
@@ -202,7 +167,7 @@ def test_visible_size_hierarchy() -> None:
     )
 
 
-def test_monitoring_is_more_stable_than_application_namespaces() -> None:
+def test_monitoring_is_more_stable_than_application_namespaces():
     """Monitoring (system-like) should have lower day-to-day variability than
     application namespaces.
 
@@ -212,7 +177,7 @@ def test_monitoring_is_more_stable_than_application_namespaces() -> None:
     dataset = generate_structured_data(days=90, project_count=3, clusters_per_project=2, seed=42)
 
     cutoff = (DEFAULT_START_DATE + timedelta(days=30)).isoformat()
-    costs_by_ns: dict[str, list[float]] = {}
+    costs_by_ns = {}
     for row in dataset["namespace_costs"]:
         if row["cost_date"] < cutoff:
             costs_by_ns.setdefault(row["namespace_name"], []).append(row["usage_cost"])
@@ -232,15 +197,15 @@ def test_monitoring_is_more_stable_than_application_namespaces() -> None:
     )
 
 
-def test_weekday_costs_higher_than_weekend_costs() -> None:
+def test_weekday_costs_higher_than_weekend_costs():
     """Average usage cost on weekdays should exceed the weekend average.
 
     This reflects lower application traffic on Saturdays and Sundays.
     """
     dataset = generate_structured_data(days=90, project_count=3, clusters_per_project=2, seed=42)
 
-    weekday_costs: list[float] = []
-    weekend_costs: list[float] = []
+    weekday_costs = []
+    weekend_costs = []
     for row in dataset["namespace_costs"]:
         d = date.fromisoformat(row["cost_date"])
         if d.weekday() < 5:  # Monday=0 … Friday=4
@@ -256,7 +221,7 @@ def test_weekday_costs_higher_than_weekend_costs() -> None:
     )
 
 
-def test_payments_spike_anomaly_is_clearly_elevated() -> None:
+def test_payments_spike_anomaly_is_clearly_elevated():
     """Days 55-57 should show a sharp spike in payments cost versus the baseline.
 
     The generator multiplies payments by 3x on those days; even accounting for
@@ -268,8 +233,8 @@ def test_payments_spike_anomaly_is_clearly_elevated() -> None:
         (DEFAULT_START_DATE + timedelta(days=d)).isoformat() for d in (55, 56, 57)
     }
 
-    spike_costs: list[float] = []
-    normal_costs: list[float] = []
+    spike_costs = []
+    normal_costs = []
     for row in dataset["namespace_costs"]:
         if row["namespace_name"] != "payments":
             continue
@@ -283,7 +248,7 @@ def test_payments_spike_anomaly_is_clearly_elevated() -> None:
     )
 
 
-def test_checkout_jump_anomaly_is_elevated() -> None:
+def test_checkout_jump_anomaly_is_elevated():
     """Days 40-43 should show elevated checkout cost versus other days.
 
     The generator adds a fixed upward jump on those days; on average the
@@ -295,8 +260,8 @@ def test_checkout_jump_anomaly_is_elevated() -> None:
         (DEFAULT_START_DATE + timedelta(days=d)).isoformat() for d in range(40, 44)
     }
 
-    jump_costs: list[float] = []
-    normal_costs: list[float] = []
+    jump_costs = []
+    normal_costs = []
     for row in dataset["namespace_costs"]:
         if row["namespace_name"] != "checkout":
             continue
@@ -310,7 +275,7 @@ def test_checkout_jump_anomaly_is_elevated() -> None:
     )
 
 
-def test_monitoring_gradual_increase_anomaly_exists() -> None:
+def test_monitoring_gradual_increase_anomaly_exists():
     """Monitoring costs after day 60 should be visibly higher than before day 60.
 
     The generator adds a linear increment starting at day_index 60, so the
@@ -320,8 +285,8 @@ def test_monitoring_gradual_increase_anomaly_exists() -> None:
 
     boundary = (DEFAULT_START_DATE + timedelta(days=60)).isoformat()
 
-    before: list[float] = []
-    after: list[float] = []
+    before = []
+    after = []
     for row in dataset["namespace_costs"]:
         if row["namespace_name"] != "monitoring":
             continue

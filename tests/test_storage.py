@@ -3,7 +3,7 @@ import sqlite3
 from src.storage import persist_pipeline_data
 
 
-def test_persist_pipeline_data_stores_anomaly_severity(tmp_path) -> None:
+def test_persist_pipeline_data_stores_anomaly_severity(tmp_path):
     db_path = tmp_path / "cloud_costs.db"
     projects = [{"project_name": "retail-prod"}]
     clusters = [{"project_name": "retail-prod", "cluster_name": "main"}]
@@ -34,7 +34,7 @@ def test_persist_pipeline_data_stores_anomaly_severity(tmp_path) -> None:
             "anomaly_ref_key": "2026-01-01|retail-prod|main|payments|moving_average_threshold",
             "method": "moving_average_threshold",
             "actual_value": 100.0,
-            "baseline_value": 40.0,
+            "moving_average": 40.0,
             "threshold_value": 50.0,
             "severity": "HIGH",
             "is_anomaly": 1,
@@ -57,7 +57,7 @@ def test_persist_pipeline_data_stores_anomaly_severity(tmp_path) -> None:
     assert row == ("HIGH",)
 
 
-def test_persist_anomaly_change_metadata(tmp_path) -> None:
+def test_persist_anomaly_change_metadata(tmp_path):
     db_path = tmp_path / "cloud_costs.db"
 
     projects = [
@@ -93,7 +93,7 @@ def test_persist_anomaly_change_metadata(tmp_path) -> None:
             "anomaly_ref_key": "2026-01-01|project-a|cluster-a|namespace-a|moving_average_threshold",
             "method": "moving_average_threshold",
             "actual_value": 120.0,
-            "baseline_value": 60.0,
+            "moving_average": 60.0,
             "threshold_value": 90.0,
             "severity": "HIGH",
             "is_anomaly": 1,
@@ -101,6 +101,7 @@ def test_persist_anomaly_change_metadata(tmp_path) -> None:
             "average_absolute_change": 20.0,
             "change_threshold": 40.0,
             "is_fast_change": True,
+            "change_type": "FAST_CHANGE",
         },
     ]
 

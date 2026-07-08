@@ -100,7 +100,7 @@ Each namespace is checked separately day by day.
 For each day, the script:
 1. Looks at the previous 7 days.
 2. Calculates a moving average as the normal level.
-3. Calculates threshold = baseline * 1.5.
+3. Calculates threshold = moving_average * 1.5.
 4. Detects anomaly if actual_value > threshold.
 
 Severity (How strong is the anomaly?):

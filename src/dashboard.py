@@ -1,7 +1,5 @@
 """Streamlit dashboard for cloud cost and anomaly results."""
 
-from __future__ import annotations
-
 import sqlite3
 
 import pandas as pd
@@ -17,6 +15,7 @@ CURRENCY_TICK_FORMAT = ",.2f"
 NAMESPACE_COLORS = px.colors.qualitative.Plotly
 SIDEBAR_WIDTH_PX = 420
 SEVERITY_ORDER = ["HIGH", "MEDIUM", "LOW"]
+DEFAULT_THRESHOLD_FACTOR = 1.5
 SEVERITY_COLORS = {
     "HIGH": "#dc2626",
     "MEDIUM": "#f59e0b",
@@ -124,7 +123,7 @@ def load_anomalies(connection: sqlite3.Connection) -> pd.DataFrame:
             n.namespace_name,
             a.method,
             a.actual_value,
-            a.baseline_value,
+            a.moving_average,
             a.threshold_value,
             a.severity,
             a.is_anomaly
@@ -164,40 +163,47 @@ def build_dashboard() -> None:
     projects = sorted(costs["project_name"].unique())
     namespaces = sorted(costs["namespace_series"].unique())
 
-    selected_projects = st.sidebar.multiselect("Project", projects, default=projects)
-    selected_namespaces = st.sidebar.multiselect("Namespace", namespaces, default=namespaces)
-    available_severities = [
+    sel_projects = st.sidebar.multiselect("Project", projects, default=projects)
+    sel_namespaces = st.sidebar.multiselect("Namespace", namespaces, default=namespaces)
+    sev_opts = [
         severity for severity in SEVERITY_ORDER if severity in set(anomalies["severity"].unique())
     ]
-    selected_severities = st.sidebar.multiselect(
+    sel_severities = st.sidebar.multiselect(
         "Anomaly severity",
-        available_severities,
-        default=available_severities,
+        sev_opts,
+        default=sev_opts,
+    )
+    threshold_factor = st.sidebar.number_input(
+        "Threshold factor",
+        min_value=1.0,
+        max_value=5.0,
+        value=DEFAULT_THRESHOLD_FACTOR,
+        step=0.1,
     )
 
-    filtered_costs = costs[
-        costs["project_name"].isin(selected_projects)
-        & costs["namespace_series"].isin(selected_namespaces)
+    costs_f = costs[
+        costs["project_name"].isin(sel_projects)
+        & costs["namespace_series"].isin(sel_namespaces)
     ]
 
-    filtered_anomalies = anomalies[
-        anomalies["project_name"].isin(selected_projects)
-        & anomalies["namespace_series"].isin(selected_namespaces)
-        & anomalies["severity"].isin(selected_severities)
+    anom_f = anomalies[
+        anomalies["project_name"].isin(sel_projects)
+        & anomalies["namespace_series"].isin(sel_namespaces)
+        & anomalies["severity"].isin(sel_severities)
     ]
 
-    if filtered_costs.empty:
+    if costs_f.empty:
         st.info("No data matches the selected filters.")
         return
 
-    daily_costs = filtered_costs.groupby("cost_date", as_index=False)["total_cost"].sum()
+    daily_costs = costs_f.groupby("cost_date", as_index=False)["total_cost"].sum()
     daily_costs["rolling_7_day_avg"] = (
         daily_costs["total_cost"].rolling(window=7, min_periods=1).mean()
     )
 
-    total_cost = filtered_costs["total_cost"].sum()
-    anomaly_count = len(filtered_anomalies)
-    anomaly_day_count = filtered_anomalies["anomaly_date"].nunique()
+    total_cost = costs_f["total_cost"].sum()
+    anomaly_count = len(anom_f)
+    anomaly_day_count = anom_f["anomaly_date"].nunique()
     latest_cost = daily_costs["total_cost"].iloc[-1]
 
     col1, col2, col3, col4 = st.columns([1.6, 1.0, 1.0, 1.3])
@@ -206,7 +212,7 @@ def build_dashboard() -> None:
     col3.metric("Days with anomalies", anomaly_day_count)
     col4.metric("Latest daily cost", format_euro(latest_cost))
 
-    severity_counts = filtered_anomalies["severity"].value_counts()
+    severity_counts = anom_f["severity"].value_counts()
     severity_cols = st.columns(3)
     for index, severity in enumerate(SEVERITY_ORDER):
         severity_cols[index].metric(
@@ -272,9 +278,9 @@ def build_dashboard() -> None:
         )
     )
 
-    if not filtered_anomalies.empty:
+    if not anom_f.empty:
         anomaly_daily = (
-            filtered_anomalies.groupby("anomaly_date", as_index=False)
+            anom_f.groupby("anomaly_date", as_index=False)
             .agg(
                 anomaly_count=("anomaly_id", "count"),
                 anomalous_namespace_cost=("actual_value", "sum"),
@@ -331,7 +337,7 @@ def build_dashboard() -> None:
 
     st.subheader("Costs by namespace")
     namespace_costs = (
-        filtered_costs.groupby("namespace_series", as_index=False)["total_cost"]
+        costs_f.groupby("namespace_series", as_index=False)["total_cost"]
         .sum()
         .sort_values("total_cost", ascending=False)
     )
@@ -354,7 +360,7 @@ def build_dashboard() -> None:
     )
     st.plotly_chart(namespace_fig, width="stretch")
 
-    if filtered_anomalies.empty:
+    if anom_f.empty:
         st.info("No anomalies found for the selected filters.")
         return
 
@@ -366,30 +372,30 @@ def build_dashboard() -> None:
         "namespace_name",
         "severity",
         "actual_value",
-        "baseline_value",
+        "moving_average",
         "threshold_value",
         "method",
     ]
-    anomaly_table = filtered_anomalies[anomaly_columns].copy()
-    for cost_column in ["actual_value", "baseline_value", "threshold_value"]:
+    anomaly_table = anom_f[anomaly_columns].copy()
+    for cost_column in ["actual_value", "moving_average", "threshold_value"]:
         anomaly_table[cost_column] = anomaly_table[cost_column].map(format_euro)
 
     st.dataframe(anomaly_table, width="stretch", hide_index=True)
 
-    anomaly_namespace_keys = filtered_anomalies[
+    anomaly_namespace_keys = anom_f[
         ["project_name", "cluster_name", "namespace_name"]
     ].drop_duplicates()
-    anomaly_cost_series = filtered_costs.merge(
+    anomaly_cost_series = costs_f.merge(
         anomaly_namespace_keys,
         on=["project_name", "cluster_name", "namespace_name"],
         how="inner",
     ).sort_values("cost_date")
-    anomaly_cost_series["baseline_value"] = anomaly_cost_series.groupby(
+    anomaly_cost_series["moving_average"] = anomaly_cost_series.groupby(
         ["project_name", "cluster_name", "namespace_name"]
     )["total_cost"].transform(
         lambda values: values.shift(1).rolling(window=7, min_periods=7).mean()
     )
-    anomaly_cost_series["threshold_value"] = anomaly_cost_series["baseline_value"] * 1.5
+    anomaly_cost_series["threshold_value"] = anomaly_cost_series["moving_average"] * threshold_factor
 
     st.subheader("Namespace costs")
     min_anomaly_chart_date = anomaly_cost_series["cost_date"].min().date()
@@ -432,11 +438,11 @@ def build_dashboard() -> None:
 
     anomaly_value_fig = go.Figure()
     baseline_range = (
-        anomaly_cost_series.dropna(subset=["baseline_value"])
+        anomaly_cost_series.dropna(subset=["moving_average"])
         .groupby("cost_date", as_index=False)
         .agg(
-            baseline_low=("baseline_value", "min"),
-            baseline_high=("baseline_value", "max"),
+            baseline_low=("moving_average", "min"),
+            baseline_high=("moving_average", "max"),
         )
     )
     if not baseline_range.empty:
@@ -532,10 +538,10 @@ def build_dashboard() -> None:
                 ),
             )
         )
-        namespace_anomalies = filtered_anomalies[
-            (filtered_anomalies["project_name"] == project_name)
-            & (filtered_anomalies["cluster_name"] == cluster_name)
-            & (filtered_anomalies["namespace_name"] == namespace_name)
+        namespace_anomalies = anom_f[
+            (anom_f["project_name"] == project_name)
+            & (anom_f["cluster_name"] == cluster_name)
+            & (anom_f["namespace_name"] == namespace_name)
         ].sort_values("anomaly_date")
         namespace_anomalies = namespace_anomalies[
             namespace_anomalies["anomaly_date"].between(
@@ -593,11 +599,11 @@ def build_dashboard() -> None:
     st.plotly_chart(anomaly_value_fig, width="stretch")
 
     anomalies_by_namespace = (
-        filtered_anomalies.groupby("namespace_series", as_index=False)
+        anom_f.groupby("namespace_series", as_index=False)
         .agg(
             anomaly_count=("anomaly_id", "count"),
             max_actual_value=("actual_value", "max"),
-            avg_baseline=("baseline_value", "mean"),
+            avg_baseline=("moving_average", "mean"),
         )
         .sort_values("anomaly_count", ascending=False)
     )
@@ -624,7 +630,7 @@ def build_dashboard() -> None:
     st.plotly_chart(anomaly_fig, width="stretch")
 
     severity_fig = px.bar(
-        filtered_anomalies.groupby("severity", as_index=False)
+        anom_f.groupby("severity", as_index=False)
         .size()
         .rename(columns={"size": "anomaly_count"}),
         x="severity",
